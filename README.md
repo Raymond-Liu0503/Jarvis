@@ -1,105 +1,34 @@
-# Jarvis Chatbot
+# Jarvis Research Workspace
 
-Intelligent AI assistant with automatic agent routing, voice input/output, and specialized agent modules.
+Jarvis is a hosted, text-first research workspace with mode-aware hubs for Stocks, Travel, and Shopping. Quick mode answers bounded questions; Deep Research uses an Inngest workflow with three fixed specialists and a cited, private report.
 
-## Features
+The repository works without credentials: dashboards render cached demo snapshots. Live chat and provider refreshes activate only when their environment variables are configured.
 
-- **Intelligent Agent Routing**: Automatically detects user intent and routes to specialized agents
-- **Voice Input/Output**: ElevenLabs speech-to-text and text-to-speech
-- **Specialized Agents**: Financial data, weather, code help, and more
-- **Modular Architecture**: Easy to add new agent capabilities
+## Run locally
 
-## Setup
+Use Node 22 LTS.
 
-1. Copy [.env.example](.env.example) to `.env` and add your API keys:
-   - `OPENROUTER_API_KEY` - Required for LLM
-   - `ELEVENLABS_API_KEY` - Required for voice features
-   - `FINANCIAL_API_KEY` - Optional, enables financial agent
-2. Install dependencies:
-   - `npm install`
-3. Start the server:
-   - `npm run dev`
-4. Open http://localhost:3000
-
-## How It Works
-
-The system uses an intelligent **Agent Selector** that analyzes your message and automatically routes it to the appropriate specialized agent:
-
-```
-User Message → Agent Selector → [Quick Pattern Match → LLM Classification]
-                                              ↓
-                     ┌────────────────────────┼────────────────────────┐
-                     ↓                        ↓                        ↓
-              FINANCIAL Agent           WEATHER Agent           GENERAL Response
-              (with MCP tools)         (if registered)          (direct LLM)
+```bash
+cp .env.example .env.local
+npm install
+npm run dev
 ```
 
-### Natural Language Examples
-
-**Financial Queries** (automatically routed to Financial Agent):
-
-- "What's the stock price of Apple?"
-- "Show me TSLA news"
-- "How is the market doing?"
-- "Tell me about Microsoft stock"
-
-**General Queries** (handled by general assistant):
-
-- "Tell me a joke"
-- "What's 25 + 37?"
-- "Who won the Super Bowl?"
-
-**Code Queries** (routed to Code Agent when available):
-
-- "How do I sort an array in Python?"
-- "Debug this JavaScript function"
-
-### Manual Agent Selection (Legacy)
-
-You can still explicitly select an agent using prefixes:
-
-- `/finance AAPL price` - Financial agent
-
-## Endpoints
-
-- `POST /chat` - Main chat endpoint with intelligent routing
-  - Automatically selects the appropriate agent
-  - Returns `{ text, toolResult, agent, toolUsed }`
-- `POST /stt` - Speech-to-text via ElevenLabs
-- `POST /tts` - Text-to-speech via ElevenLabs
-- `POST /agent/financial` - Direct financial agent access
+Then open `http://localhost:3000`. Run `npm test`, `npm run typecheck`, and `npm run build` before deployment.
 
 ## Architecture
 
-The system implements an intelligent agentic architecture:
+- Next.js App Router, strict TypeScript, React, Tailwind CSS
+- Vercel AI SDK with OpenRouter and environment-selected model roles
+- Inngest at `/api/inngest` for durable research and refresh jobs
+- Supabase Auth/Postgres; the initial migration enables RLS on every user-owned table
+- Vendor-neutral provider contracts in `lib/providers/contracts.ts`
+- Typed mode registry in `lib/research/modes.ts`; shared routing and orchestration do not branch on hub internals
 
-1. **Perception**: Capture user input (text or speech)
-2. **Reasoning**: Agent Selector analyzes intent and selects appropriate agent
-3. **Action**: Execute the selected agent with tools and return response
+Production adapters must validate and normalize vendor responses. URL-based shopping intake may extract first-party JSON-LD in a constrained provider; arbitrary server-side URL fetching is not allowed. Tool access is read-only and scoped to each mode.
 
-### Agent Selector
+## MVP boundaries
 
-The Agent Selector uses a two-stage approach:
+Jarvis recommends and links outward. It cannot trade, book, purchase, or prepare a transaction. Refresh is hub-open or manual only—there are no scheduled monitors or alerts. Financial output is informational. Travel and commerce observations retain currency, retrieval time, expiry, and a verification notice. Duffel stays off unless `ENABLE_DUFFEL=true` and production access is configured.
 
-1. **Quick Pattern Matching**: Fast keyword detection for common queries
-2. **LLM Classification**: For ambiguous cases, uses LLM to classify intent
-3. **Caching**: Remembers recent routing decisions for speed
-
-### Adding New Agents
-
-See [agents/README.md](agents/README.md) for documentation on creating custom agents.
-
-```javascript
-import agentFactory from "./agents/AgentFactory.js";
-
-// Create custom agent
-const myAgent = agentFactory.createCustom({
-  name: "MyAgent",
-  systemPrompt: "Your instructions...",
-  llmApiKey: process.env.OPENROUTER_API_KEY,
-  // ... configuration
-});
-
-// Register with selector
-agentSelector.registerAgent("MYAGENT", myAgent);
-```
+The in-memory run store is a development fallback. Production deployments must persist runs through Supabase and authenticate every route; service-role workflow mutations must re-check the stored `user_id` before writing.

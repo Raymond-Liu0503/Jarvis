@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+:root { --ink: #17211b; --muted: #69756e; --paper: #f4f2eb; --panel: #fbfaf6; --line: #dcded5; --accent: #b7f34b; }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); background: var(--paper); font-family: Arial, Helvetica, sans-serif; }
+button, input, textarea { font: inherit; }
+.serif { font-family: Georgia, "Times New Roman", serif; }
+.card { background: color-mix(in srgb, var(--panel) 96%, white); border: 1px solid var(--line); border-radius: 18px; }
+.noise { background-image: radial-gradient(rgba(23,33,27,.07) .55px, transparent .55px); background-size: 5px 5px; }
+@media (max-width: 820px) { .desktop-sidebar { display: none; } .hub-grid { grid-template-columns: 1fr !important; } }

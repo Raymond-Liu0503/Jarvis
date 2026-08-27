@@ -1,23 +1,16 @@
 {
-  "name": "jarvis-chatbot",
-  "version": "0.1.0",
+  "name": "jarvis-research-workspace",
+  "version": "1.0.0",
   "private": true,
-  "type": "module",
-  "description": "Baseline responsive chatbot with ElevenLabs voice input/output.",
-  "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js"
-  },
+  "engines": { "node": "22.x" },
+  "scripts": { "dev": "next dev", "build": "next build", "start": "next start", "typecheck": "tsc --noEmit", "test": "vitest run" },
   "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "multer": "^1.4.5-lts.1"
+    "@ai-sdk/openai-compatible": "^1.0.10", "@supabase/ssr": "^0.7.0", "@supabase/supabase-js": "^2.57.4",
+    "ai": "^5.0.50", "clsx": "^2.1.1", "inngest": "^3.44.1", "lucide-react": "^0.544.0",
+    "next": "15.5.24", "react": "19.1.1", "react-dom": "19.1.1", "tailwind-merge": "^3.3.1", "zod": "^4.1.5"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
-  },
-  "engines": {
-    "node": ">=18"
+    "@tailwindcss/postcss": "^4.1.13", "@types/node": "^22.18.3", "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9", "tailwindcss": "^4.1.13", "typescript": "^5.9.2", "vitest": "^3.2.4"
   }
 }
