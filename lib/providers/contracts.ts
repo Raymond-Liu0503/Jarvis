@@ -1,8 +1,11 @@
 import type { Source } from "@/lib/contracts";
+import type { LanguageModel } from "ai";
 
 export type ProviderResult<T> = { data: T; provider: string; retrievedAt: string; expiresAt: string; delayed?: boolean; sources: Source[] };
-export interface ModelProvider { stream(prompt: string, role: "FAST" | "REASONING" | "SYNTHESIS"): Promise<ReadableStream>; }
-export interface SearchProvider { search(query: string, limit?: number): Promise<ProviderResult<Array<{ title: string; url: string; excerpt: string }>>>; }
+export type ModelRole = "FAST" | "REASONING" | "SYNTHESIS";
+export type SearchOptions = { limit?: number; category?: "company" | "people" | "research paper" | "news" | "personal site" | "financial report"; includeDomains?: string[]; excludeDomains?: string[]; startPublishedDate?: string; endPublishedDate?: string; maxAgeHours?: number };
+export interface ModelProvider { model(role: ModelRole): LanguageModel; configured(role: ModelRole): boolean; }
+export interface SearchProvider { search(query: string, options?: number | SearchOptions): Promise<ProviderResult<Array<{ title: string; url: string; excerpt: string }>>>; }
 export interface MarketDataProvider { quote(ticker: string): Promise<ProviderResult<{ ticker: string; price: number; currency: string; changePercent: number; marketOpen: boolean }>>; }
 export interface MarketOverviewProvider { overview(): Promise<ProviderResult<{ indices: unknown[]; gainers: unknown[]; losers: unknown[]; active: unknown[] }>>; }
 export interface WeatherProvider { forecast(place: string, start?: string): Promise<ProviderResult<unknown>>; }

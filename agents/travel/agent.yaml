@@ -1,0 +1,41 @@
+id: travel
+mode: travel
+label: Travel
+version: 1.0.0
+description: Research destinations, schedules, events, conditions, and trip feasibility.
+accent: cyan
+disclaimer: Prices and availability require verification with the provider.
+requiredIntake: [destination, dates]
+prompts:
+  quick: prompts/quick.md
+  synthesis: prompts/synthesis.md
+tools: [weather, places, events, flightOffers, webSearch]
+limits:
+  sourceBudget: 20
+  quickSearchRounds: 1
+  deepToolRounds: 3
+lenses:
+  - id: logistics
+    label: Logistics & schedule
+    focus: routes, timing, and itinerary
+    mission: Test whether the proposed trip works operationally on the specified dates.
+    prompt: prompts/logistics.md
+    tools: [weather, flightOffers, webSearch]
+    minimumSources: 2
+    preferredSourceTypes: [weather, web]
+  - id: destination
+    label: Destinations & events
+    focus: places, weather, and local events
+    mission: Find date-relevant places and events that fit the traveler rather than generic popularity lists.
+    prompt: prompts/destinations-events.md
+    tools: [places, events, weather, webSearch]
+    minimumSources: 2
+    preferredSourceTypes: [place, event, weather, web]
+  - id: budget
+    label: Budget & feasibility
+    focus: cost, constraints, and alternatives
+    mission: Assess affordability and surface practical alternatives when constraints conflict.
+    prompt: prompts/budget-feasibility.md
+    tools: [flightOffers, places, webSearch]
+    minimumSources: 2
+    preferredSourceTypes: [place, commerce, web]

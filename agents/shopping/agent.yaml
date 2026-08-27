@@ -1,0 +1,41 @@
+id: shopping
+mode: shopping
+label: Shopping
+version: 1.0.0
+description: Research products, specifications, prices, alternatives, and reliability.
+accent: violet
+disclaimer: Observed prices are snapshots; verify price and availability with the seller.
+requiredIntake: [product or public URL]
+prompts:
+  quick: prompts/quick.md
+  synthesis: prompts/synthesis.md
+tools: [commerceSnapshot, webSearch]
+limits:
+  sourceBudget: 20
+  quickSearchRounds: 1
+  deepToolRounds: 3
+lenses:
+  - id: fit
+    label: Specifications & fit
+    focus: requirements, specifications, and compatibility
+    mission: Determine whether the product satisfies the user's actual requirements and constraints.
+    prompt: prompts/specifications-fit.md
+    tools: [commerceSnapshot, webSearch]
+    minimumSources: 2
+    preferredSourceTypes: [commerce, web]
+  - id: price
+    label: Price & alternatives
+    focus: observed price and competing products
+    mission: Compare current observed value and identify credible substitutes with explicit trade-offs.
+    prompt: prompts/price-alternatives.md
+    tools: [commerceSnapshot, webSearch]
+    minimumSources: 2
+    preferredSourceTypes: [commerce, web]
+  - id: reviews
+    label: Reviews & reliability
+    focus: reliability, support, and review patterns
+    mission: Identify repeated strengths, failure modes, warranty limitations, and review-selection bias.
+    prompt: prompts/reviews-reliability.md
+    tools: [webSearch]
+    minimumSources: 2
+    preferredSourceTypes: [web]

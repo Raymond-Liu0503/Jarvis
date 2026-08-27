@@ -16,6 +16,8 @@ npm run dev
 
 Then open `http://localhost:3000`. Run `npm test`, `npm run typecheck`, and `npm run build` before deployment.
 
+Quick Chat uses `MODEL_FAST` and may call Exa once when current evidence is needed. Deep Research requires `MODEL_REASONING`, `MODEL_SYNTHESIS`, Exa, and Inngest. For local workflows, set `INNGEST_DEV=1`, run the app, then run `npx inngest-cli@latest dev` in a second terminal and connect it to `http://localhost:3000/api/inngest`.
+
 ## Architecture
 
 - Next.js App Router, strict TypeScript, React, Tailwind CSS
@@ -24,6 +26,11 @@ Then open `http://localhost:3000`. Run `npm test`, `npm run typecheck`, and `npm
 - Supabase Auth/Postgres; the initial migration enables RLS on every user-owned table
 - Vendor-neutral provider contracts in `lib/providers/contracts.ts`
 - Typed mode registry in `lib/research/modes.ts`; shared routing and orchestration do not branch on hub internals
+- Nine prompt-versioned specialists with strict tool allowlists; Exa is a shared tool rather than a fourth agent
+
+### Agent configuration
+
+The three executable domain agents are configured under `agents/finance`, `agents/travel`, and `agents/shopping`. Each directory contains an `agent.yaml` manifest plus Markdown files for the quick, synthesis, and three lens prompts. The YAML is validated at runtime by `lib/agents/config-loader.ts`; it can select only known tool IDs, and each lens must be a subset of its parent agent's tools. Inngest receives only `agentId`/run data and resolves the manifest inside the worker.
 
 Production adapters must validate and normalize vendor responses. URL-based shopping intake may extract first-party JSON-LD in a constrained provider; arbitrary server-side URL fetching is not allowed. Tool access is read-only and scoped to each mode.
 
