@@ -3,7 +3,7 @@ import { isExpired, priceChangePercent } from "@/lib/config";
 import { canonicalizeUrl, deduplicateSources, hasCitationCoverage } from "@/lib/research/sources";
 import { EvidenceStore, ToolCallBudget } from "@/lib/research/evidence";
 import { getSkill, loadSkills, skillCatalog } from "@/lib/skills/loader";
-import { heuristicRoute, planResearch } from "@/lib/skills/routing";
+import { hasExplicitIntakeValue, heuristicRoute, planResearch } from "@/lib/skills/routing";
 import type { Source } from "@/lib/contracts";
 import { GET as inngestGet, POST as inngestPost, PUT as inngestPut } from "@/app/api/inngest/route";
 import { runStore } from "@/lib/research/store";
@@ -12,12 +12,18 @@ import { deepResearch } from "@/lib/research/workflow";
 import { fallbackSpecialistResult, searchOptionsFor } from "@/lib/research/agents";
 import { recoverObjectFromText } from "@/lib/research/structured-output";
 import { specialistResultSchema } from "@/lib/contracts";
+import { quickEvidenceFallback } from "@/lib/research/quick-fallback";
 describe("skill packages", () => {
   it("auto-discovers three domains and the fallback", () => expect([...loadSkills().keys()].sort()).toEqual(["general-research", "product-research", "stock-analysis", "travel-planning"]));
   it("keeps routing metadata cheap", () => expect(skillCatalog().every(item => Object.keys(item).length === 2)).toBe(true));
   it("loads versioned references and namespaced lenses", () => { for (const skill of loadSkills().values()) { expect(skill.instructions.length).toBeGreaterThan(80); expect(skill.specialists.length).toBeGreaterThanOrEqual(3); for (const lens of skill.specialists) { expect(lens.id.startsWith(`${skill.id}/`)).toBe(true); expect(lens.systemPrompt.length).toBeGreaterThan(60); expect(lens.tools.every(tool => skill.tools.includes(tool))).toBe(true); } } });
   it("falls back and composes obvious domains", () => { expect(heuristicRoute("Explain photosynthesis").selections[0].skillId).toBe("general-research"); expect(heuristicRoute("Compare travel headphones for my trip").selections.map(item => item.skillId)).toEqual(["travel-planning", "product-research"]); });
   it("does not route stock purchase language to product research", () => expect(heuristicRoute("Should I buy MRVL stock at this price?").selections.map(item => item.skillId)).toEqual(["stock-analysis"]));
+  it("recognizes a named company as satisfying stock intake", () => {
+    expect(hasExplicitIntakeValue("stock-analysis", "company", "Should I buy Marvell stock now?")).toBe(true);
+    expect(hasExplicitIntakeValue("stock-analysis", "company", "Is marvell a good stock to buy today?")).toBe(true);
+    expect(hasExplicitIntakeValue("stock-analysis", "company", "Should I buy this stock?")).toBe(false);
+  });
   it("creates a bounded balanced plan without models", async () => { const result = await planResearch(["stock-analysis", "travel-planning"], "AAPL around my Lisbon trip", []); expect(result.plan?.specialists.length).toBeGreaterThanOrEqual(3); expect(result.plan?.specialists.length).toBeLessThanOrEqual(4); expect(new Set(result.plan?.specialists.map(item => item.skillId))).toEqual(new Set(["stock-analysis", "travel-planning"])); });
   it("loads the required fallback", () => expect(getSkill("general-research").tools).toEqual(["webSearch"]));
   it("exports every Inngest serve method", () => { expect(inngestGet).toBeTypeOf("function"); expect(inngestPost).toBeTypeOf("function"); expect(inngestPut).toBeTypeOf("function"); });
@@ -36,4 +42,5 @@ describe("freshness and evidence", () => {
   it("canonicalizes and deduplicates", () => { expect(canonicalizeUrl(source.canonicalUrl)).toBe("https://example.com/story"); expect(deduplicateSources([source, { ...source, id: "s2" }])).toHaveLength(1); });
   it("enforces citation coverage", () => { expect(hasCitationCoverage([{ specialist: "fit", claim: "x", confidence: .8, sourceIds: ["s1"], caveats: [] }], [source])).toBe(true); expect(hasCitationCoverage([{ specialist: "fit", claim: "x", confidence: .8, sourceIds: [], caveats: [] }], [source])).toBe(false); });
   it("enforces evidence and call budgets", () => { const store = new EvidenceStore(2); expect(store.reserve(2)).toBe(2); store.release(1); expect(store.reserve(1)).toBe(1); store.add([source, { ...source, id: "duplicate" }, { ...source, id: "s2", canonicalUrl: "https://example.com/two" }]); expect(store.all()).toHaveLength(2); const budget = new ToolCallBudget(1); budget.take(); expect(() => budget.take()).toThrow(/exhausted/); });
+  it("builds a visible evidence fallback for an empty quick-chat completion", () => expect(quickEvidenceFallback([source])).toContain(`[${source.id}]`));
 });

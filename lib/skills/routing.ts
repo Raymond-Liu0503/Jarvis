@@ -69,6 +69,17 @@ const planSchema = z.object({
   rationale: z.string(),
 });
 
+export function hasExplicitIntakeValue(skillId: string, fieldId: string, query: string) {
+  if (skillId !== "stock-analysis" || fieldId !== "company") return false;
+  if (/\$[A-Z]{1,5}\b|\b[A-Z]{2,5}\b/.test(query)) return true;
+  const stopwords = new Set(["this", "that", "which", "what", "some", "good", "public", "company", "stock", "share", "shares"]);
+  const candidates = [
+    query.match(/\b([a-z][a-z0-9.&-]{2,})\s+(?:stock|shares?)\b/i)?.[1],
+    query.match(/\b(?:buy|research|analy[sz]e|evaluate|about|is)\s+([a-z][a-z0-9.&-]{2,})\b/i)?.[1],
+  ];
+  return candidates.some(candidate => candidate && !stopwords.has(candidate.toLowerCase()));
+}
+
 export async function planResearch(skillIds: string[], query: string, history: Array<{ role: string; content: string }>): Promise<{ plan?: ResearchPlan; questions?: string[] }> {
   const skills = skillIds.map(getSkill);
   const all = skills.flatMap(skill => skill.specialists);
@@ -89,15 +100,16 @@ export async function planResearch(skillIds: string[], query: string, history: A
   try {
     const result = await generateText({
       model: modelProvider.model("REASONING"),
-      system: `Validate required intake and select 3 or 4 relevant lenses total, including at least one from each skill. Return only listed IDs and one concise rationale.\n${jsonInstruction(planSchema)}`,
+      system: `Validate required intake and select 3 or 4 relevant lenses total, including at least one from each skill. A ticker or explicitly named public company in the request satisfies stock-analysis.company; do not ask for its ticker separately. Return only listed IDs and one concise rationale.\n${jsonInstruction(planSchema)}`,
       prompt: `Request: ${query}\nContext: ${JSON.stringify(history)}\nSkills: ${JSON.stringify(skills.map(skill => ({ id: skill.id, intake: skill.intake, lenses: skill.specialists.map(lens => ({ id: lens.id, mission: lens.mission })) })))}`,
       ...STRUCTURED_GENERATION_SETTINGS,
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS),
     });
     const output = requireObjectFromText(result.text, planSchema);
-    if (output.missing.length) {
-      const questions = output.missing.flatMap(item => {
+    const genuinelyMissing = output.missing.filter(item => !hasExplicitIntakeValue(item.skillId, item.fieldId, query));
+    if (genuinelyMissing.length) {
+      const questions = genuinelyMissing.flatMap(item => {
         const field = getSkill(item.skillId).intake.find(candidate => candidate.id === item.fieldId);
         return field ? [field.question] : [];
       });

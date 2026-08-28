@@ -1,7 +1,8 @@
 import type { ResearchPlan, ResearchReport, RunStatus, SkillId, SpecialistProgressState } from "@/lib/contracts";
 import { RESEARCH_RUN_TIMEOUT_MS } from "@/lib/research/limits";
 export type SpecialistProgress = { id: string; label: string; state: SpecialistProgressState; detail?: string; updatedAt: string; error?: string };
-export type RunRecord = { id: string; threadId: string; skillIds: SkillId[]; query: string; plan: ResearchPlan; status: RunStatus; createdAt: string; updatedAt: string; deadlineAt: string; specialists: SpecialistProgress[]; report?: ResearchReport; error?: string };
+export type PendingInput = { interruptId: string; questions: string[] };
+export type RunRecord = { id: string; threadId: string; skillIds: SkillId[]; query: string; plan: ResearchPlan; status: RunStatus; createdAt: string; updatedAt: string; deadlineAt: string; specialists: SpecialistProgress[]; report?: ResearchReport; error?: string; pendingInput?: PendingInput | null };
 export type MessageRecord = { id: string; threadId: string; role: "user" | "assistant"; content: string; createdAt: string };
 export type ThreadRecord = { id: string; title: string; createdAt: string; messages: MessageRecord[] };
 export type TraceEvent = { id: string; threadId: string; runId?: string; type: string; detail: Record<string, unknown>; createdAt: string };
