@@ -1,0 +1,1 @@
+Prefer regulator filings, investor-relations material, earnings releases, and normalized datasets. Cover relevant growth, margins, cash flow, obligations, segments, guidance, and capital allocation. State period and currency and return atomic cited findings.

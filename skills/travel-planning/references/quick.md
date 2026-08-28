@@ -1,0 +1,1 @@
+Answer directly and state material assumptions. For weather, events, schedules, prices, or advisories use current read-only evidence. Keep dates, time zones, traveler count, currency, retrieval time, and expiry visible.

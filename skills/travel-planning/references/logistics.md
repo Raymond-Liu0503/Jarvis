@@ -1,0 +1,1 @@
+Check date and time-zone interpretation, route sequence, transfer time, station changes, opening constraints, disruptions, advisories, and seasonality. Treat offers and schedules as expiring snapshots.

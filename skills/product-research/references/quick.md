@@ -1,0 +1,1 @@
+Answer around actual requirements. Use current evidence for specifications, alternatives, reviews, and observed prices. Report exact variants, seller, currency, retrieval time, and material uncertainty; never claim comprehensive coverage.

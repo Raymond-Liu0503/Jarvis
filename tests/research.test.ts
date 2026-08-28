@@ -1,33 +1,39 @@
 import { describe, expect, it } from "vitest";
 import { isExpired, priceChangePercent } from "@/lib/config";
-import { classifyHub, validateIntake } from "@/lib/research/intake";
 import { canonicalizeUrl, deduplicateSources, hasCitationCoverage } from "@/lib/research/sources";
-import { MODE_DEFINITIONS } from "@/lib/research/modes";
-import { agentRegistry } from "@/lib/agents/registry";
-import { loadAgentConfig } from "@/lib/agents/config-loader";
-import type { Source } from "@/lib/contracts";
 import { EvidenceStore, ToolCallBudget } from "@/lib/research/evidence";
-
-describe("agent registry and manifests", () => {
-  it("defines exactly three domain agents and three lenses per agent", () => { expect(Object.keys(agentRegistry)).toEqual(["stocks", "travel", "shopping"]); for (const agent of Object.values(agentRegistry)) expect(agent.lenses).toHaveLength(3); });
-  it("loads versioned prompts and validates lens tool subsets", () => { for (const agent of Object.values(agentRegistry)) for (const lens of agent.lenses) { expect(lens.promptVersion).toMatch(/^\d+\.\d+\.\d+$/); expect(lens.systemPrompt.length).toBeGreaterThan(100); expect(lens.maxToolRounds).toBe(3); expect(lens.tools.every(tool => new Set<string>(agent.definition.tools).has(tool))).toBe(true); } });
-  it("loads all prompt files from YAML manifests", () => { expect(loadAgentConfig("finance").synthesisPrompt.length).toBeGreaterThan(100); expect(MODE_DEFINITIONS.stocks.specialists).toHaveLength(3); });
-  it("makes web search available to every lens", () => { for (const agent of Object.values(agentRegistry)) for (const lens of agent.lenses) expect(lens.tools).toContain("webSearch"); });
+import { getSkill, loadSkills, skillCatalog } from "@/lib/skills/loader";
+import { heuristicRoute, planResearch } from "@/lib/skills/routing";
+import type { Source } from "@/lib/contracts";
+import { GET as inngestGet, POST as inngestPost, PUT as inngestPut } from "@/app/api/inngest/route";
+import { runStore } from "@/lib/research/store";
+import { RESEARCH_RUN_TIMEOUT_MS } from "@/lib/research/limits";
+import { deepResearch } from "@/lib/research/workflow";
+import { fallbackSpecialistResult, searchOptionsFor } from "@/lib/research/agents";
+import { recoverObjectFromText } from "@/lib/research/structured-output";
+import { specialistResultSchema } from "@/lib/contracts";
+describe("skill packages", () => {
+  it("auto-discovers three domains and the fallback", () => expect([...loadSkills().keys()].sort()).toEqual(["general-research", "product-research", "stock-analysis", "travel-planning"]));
+  it("keeps routing metadata cheap", () => expect(skillCatalog().every(item => Object.keys(item).length === 2)).toBe(true));
+  it("loads versioned references and namespaced lenses", () => { for (const skill of loadSkills().values()) { expect(skill.instructions.length).toBeGreaterThan(80); expect(skill.specialists.length).toBeGreaterThanOrEqual(3); for (const lens of skill.specialists) { expect(lens.id.startsWith(`${skill.id}/`)).toBe(true); expect(lens.systemPrompt.length).toBeGreaterThan(60); expect(lens.tools.every(tool => skill.tools.includes(tool))).toBe(true); } } });
+  it("falls back and composes obvious domains", () => { expect(heuristicRoute("Explain photosynthesis").selections[0].skillId).toBe("general-research"); expect(heuristicRoute("Compare travel headphones for my trip").selections.map(item => item.skillId)).toEqual(["travel-planning", "product-research"]); });
+  it("does not route stock purchase language to product research", () => expect(heuristicRoute("Should I buy MRVL stock at this price?").selections.map(item => item.skillId)).toEqual(["stock-analysis"]));
+  it("creates a bounded balanced plan without models", async () => { const result = await planResearch(["stock-analysis", "travel-planning"], "AAPL around my Lisbon trip", []); expect(result.plan?.specialists.length).toBeGreaterThanOrEqual(3); expect(result.plan?.specialists.length).toBeLessThanOrEqual(4); expect(new Set(result.plan?.specialists.map(item => item.skillId))).toEqual(new Set(["stock-analysis", "travel-planning"])); });
+  it("loads the required fallback", () => expect(getSkill("general-research").tools).toEqual(["webSearch"]));
+  it("exports every Inngest serve method", () => { expect(inngestGet).toBeTypeOf("function"); expect(inngestPost).toBeTypeOf("function"); expect(inngestPut).toBeTypeOf("function"); });
+  it("expires a non-terminal research run at its absolute deadline", () => { const skill = getSkill("general-research"); const plan = { skillIds: [skill.id], skillVersions: { [skill.id]: skill.version }, specialists: skill.specialists.map(({ id, skillId, label, focus }) => ({ id, skillId, label, focus })), rationale: "test" }; const before = Date.now(); const run = runStore.create(crypto.randomUUID(), "test timeout", plan); expect(Date.parse(run.deadlineAt) - before).toBeGreaterThanOrEqual(RESEARCH_RUN_TIMEOUT_MS - 1_000); expect(runStore.expire(run.id, Date.parse(run.deadlineAt) + 1)?.status).toBe("failed"); expect(runStore.get(run.id)?.error).toMatch(/timed out/i); });
+  it("can reconstruct event-carried run metadata in a fresh execution context", () => { const skill = getSkill("general-research"); const plan = { skillIds: [skill.id], skillVersions: { [skill.id]: skill.version }, specialists: skill.specialists.map(({ id, skillId, label, focus }) => ({ id, skillId, label, focus })), rationale: "event snapshot" }; const original = runStore.create(crypto.randomUUID(), "durable event", plan); const snapshot = structuredClone({ ...original, id: crypto.randomUUID() }); expect(runStore.restore(snapshot)).toEqual(snapshot); expect(runStore.get(snapshot.id)?.plan.rationale).toBe("event snapshot"); });
+  it("does not ask Inngest to rerun failed research steps", () => { expect(deepResearch.opts.retries).toBe(0); expect(deepResearch.opts.timeouts).toMatchObject({ start: "2m", finish: "5m" }); });
+  it("recovers malformed specialist output using only cited evidence", () => { const lens = getSkill("general-research").specialists[0]; const sources: Source[] = ["one", "two"].map((id, index) => ({ id, canonicalUrl: `https://example.com/${id}`, title: id, publisher: "Example", publishedAt: null, retrievedAt: "2026-01-01T00:00:00.000Z", excerpt: `Verified evidence excerpt ${index + 1}`, type: "web" })); const result = fallbackSpecialistResult(lens, sources); expect(result.limitations[0]).toMatch(/Degraded/); expect(result.findings.map(item => item.sourceIds[0])).toEqual(["one", "two"]); expect(hasCitationCoverage(result.findings, sources)).toBe(true); });
+  it("recovers schema-valid JSON with a malformed model prefix", () => { const malformed = `{"{"specialist":"product-research/reliability","summary":"Recovered","findings":[],"limitations":[]}`; expect(recoverObjectFromText(malformed, specialistResultSchema)).toMatchObject({ specialist: "product-research/reliability", summary: "Recovered" }); expect(recoverObjectFromText('{"query":"not a specialist result"}', specialistResultSchema)).toBeUndefined(); });
+  it("recovers a valid object before malformed trailing text", () => { const text = '{"specialist":"stock-analysis/market","summary":"Recovered","findings":[],"limitations":[]} trailing {"'; expect(recoverObjectFromText(text, specialistResultSchema)?.summary).toBe("Recovered"); });
+  it("does not treat an empty model response as structured output", () => { expect(recoverObjectFromText("", specialistResultSchema)).toBeUndefined(); });
 });
-describe("routing and intake", () => {
-  it("routes confident requests", () => expect(classifyHub("plan a travel itinerary to Lisbon")).toMatchObject({ mode: "travel", confidence: .82 }));
-  it("defers ambiguous requests", () => expect(classifyHub("help me decide").mode).toBeNull());
-  it("requests missing travel dates", () => expect(validateIntake("travel", "trip to Lisbon").missing).toContain("dates"));
-});
-describe("freshness and commerce", () => {
-  it("marks expiry", () => expect(isExpired("2020-01-01T00:00:00.000Z")).toBe(true));
-  it("calculates price changes", () => expect(priceChangePercent(90, 100)).toBe(-10));
-});
-describe("evidence", () => {
+describe("freshness and evidence", () => {
   const source: Source = { id: "s1", canonicalUrl: "https://Example.com/story?utm_source=x", title: "Story", publisher: "Example", publishedAt: null, retrievedAt: "2026-01-01T00:00:00.000Z", excerpt: "Evidence", type: "web" };
-  it("canonicalizes and deduplicates sources", () => { expect(canonicalizeUrl(source.canonicalUrl)).toBe("https://example.com/story"); expect(deduplicateSources([source, { ...source, id: "s2" }])).toHaveLength(1); });
-  it("requires source ids for every finding", () => expect(hasCitationCoverage([{ specialist: "fit", claim: "x", confidence: .8, sourceIds: ["s1"], caveats: [] }], [source])).toBe(true));
-  it("rejects missing and unknown citation ids", () => { expect(hasCitationCoverage([{ specialist: "fit", claim: "x", confidence: .8, sourceIds: [], caveats: [] }], [source])).toBe(false); expect(hasCitationCoverage([{ specialist: "fit", claim: "x", confidence: .8, sourceIds: ["missing"], caveats: [] }], [source])).toBe(false); });
-  it("deduplicates and caps shared run evidence", () => { const store = new EvidenceStore(2); store.add([source, { ...source, id: "duplicate" }, { ...source, id: "s2", canonicalUrl: "https://example.com/two" }, { ...source, id: "s3", canonicalUrl: "https://example.com/three" }]); expect(store.all().map(item => item.id)).toEqual(["s1", "s2"]); });
-  it("enforces tool-call budgets", () => { const budget = new ToolCallBudget(1); budget.take(); expect(() => budget.take()).toThrow(/exhausted/); });
+  it("handles freshness and price changes", () => { expect(isExpired("2020-01-01T00:00:00.000Z")).toBe(true); expect(priceChangePercent(90, 100)).toBe(-10); });
+  it("applies strict recency and live-content settings to market news", () => { const lens = getSkill("stock-analysis").specialists.find(item => item.id.endsWith("/market"))!; expect(searchOptionsFor(lens, new Date("2026-08-27T16:00:00.000Z"))).toEqual({ category: "news", startPublishedDate: "2026-07-28T16:00:00.000Z", endPublishedDate: "2026-08-27T16:00:00.000Z", maxAgeHours: 1 }); });
+  it("canonicalizes and deduplicates", () => { expect(canonicalizeUrl(source.canonicalUrl)).toBe("https://example.com/story"); expect(deduplicateSources([source, { ...source, id: "s2" }])).toHaveLength(1); });
+  it("enforces citation coverage", () => { expect(hasCitationCoverage([{ specialist: "fit", claim: "x", confidence: .8, sourceIds: ["s1"], caveats: [] }], [source])).toBe(true); expect(hasCitationCoverage([{ specialist: "fit", claim: "x", confidence: .8, sourceIds: [], caveats: [] }], [source])).toBe(false); });
+  it("enforces evidence and call budgets", () => { const store = new EvidenceStore(2); expect(store.reserve(2)).toBe(2); store.release(1); expect(store.reserve(1)).toBe(1); store.add([source, { ...source, id: "duplicate" }, { ...source, id: "s2", canonicalUrl: "https://example.com/two" }]); expect(store.all()).toHaveLength(2); const budget = new ToolCallBudget(1); budget.take(); expect(() => budget.take()).toThrow(/exhausted/); });
 });

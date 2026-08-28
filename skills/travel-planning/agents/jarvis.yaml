@@ -1,0 +1,13 @@
+version: 1.1.0
+label: Travel Planning
+disclaimer: Prices and availability require verification with the provider.
+tools: [weather, places, events, flightOffers, webSearch]
+intake:
+  - { id: destination, description: destination or region, question: Where would you like to go? }
+  - { id: dates, description: travel dates or date range, question: What dates should I plan around? }
+prompts: { quick: references/quick.md, synthesis: references/synthesis.md }
+limits: { deepToolRounds: 3 }
+lenses:
+  - { id: logistics, label: Logistics & schedule, focus: routes timing and itinerary, mission: Test whether the trip works operationally on the specified dates, prompt: references/logistics.md, tools: [weather, flightOffers, webSearch], minimumSources: 2, preferredSourceTypes: [weather, web], freshness: { maxAgeHours: 6 } }
+  - { id: destination, label: Destinations & events, focus: places weather and local events, mission: Find date-relevant places and events that fit the traveler, prompt: references/destination.md, tools: [places, events, weather, webSearch], minimumSources: 2, preferredSourceTypes: [place, event, weather, web], freshness: { maxAgeHours: 6 } }
+  - { id: budget, label: Budget & feasibility, focus: cost constraints and alternatives, mission: Assess affordability and practical alternatives, prompt: references/budget.md, tools: [flightOffers, places, webSearch], minimumSources: 2, preferredSourceTypes: [place, commerce, web], freshness: { maxAgeHours: 12 } }

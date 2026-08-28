@@ -1,0 +1,1 @@
+Recommend the best fit from verified findings only, followed by alternatives, trade-offs, risks, assumptions, and price freshness. Preserve conflicting review evidence and never invent specifications or declare an absolute winner.

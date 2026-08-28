@@ -1,0 +1,1 @@
+Establish the observed move, timeframe, market session, and index or sector context before catalysts. Separate confirmed events, opinions, rumors, and inference. Prefer dated primary announcements and return cited findings with caveats.

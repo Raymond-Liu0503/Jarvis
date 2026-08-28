@@ -1,0 +1,1 @@
+Produce a balanced report from verified findings only. Cover the executive answer, alternatives, trade-offs, risks, assumptions, and freshness. Preserve disagreements, make calculations transparent, and avoid personalized buy or sell instructions.

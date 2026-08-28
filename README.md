@@ -1,41 +1,43 @@
 # Jarvis Research Workspace
 
-Jarvis is a hosted, text-first research workspace with mode-aware hubs for Stocks, Travel, and Shopping. Quick mode answers bounded questions; Deep Research uses an Inngest workflow with three fixed specialists and a cited, private report.
-
-The repository works without credentials: dashboards render cached demo snapshots. Live chat and provider refreshes activate only when their environment variables are configured.
+Jarvis is a private, unified research workspace. Users ask from one hub; Jarvis automatically routes each turn to one or more installed skills and uses either a bounded Quick workflow or durable Deep Research with cited evidence.
 
 ## Run locally
 
-Use Node 22 LTS.
+Use Node 22 LTS, copy `.env.example` to `.env.local`, then run `npm install` and `npm run dev`. Open `http://localhost:3000`.
+
+Quick mode requires `OPENROUTER_API_KEY` and `MODEL_FAST`. Deep Research additionally requires `MODEL_REASONING`, `MODEL_SYNTHESIS`, Exa, and Inngest. For local durable workflows set `INNGEST_DEV=1`, start the app, then run:
 
 ```bash
-cp .env.example .env.local
-npm install
-npm run dev
+npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
 ```
 
-Then open `http://localhost:3000`. Run `npm test`, `npm run typecheck`, and `npm run build` before deployment.
+The Inngest serve endpoint is `/api/inngest` and exposes GET, POST, and PUT handlers.
 
-Quick Chat uses `MODEL_FAST` and may call Exa once when current evidence is needed. Deep Research requires `MODEL_REASONING`, `MODEL_SYNTHESIS`, Exa, and Inngest. For local workflows, set `INNGEST_DEV=1`, run the app, then run `npx inngest-cli@latest dev` in a second terminal and connect it to `http://localhost:3000/api/inngest`.
+## Skill architecture
 
-## Architecture
+Skills are trusted packages under `skills/` and are discovered automatically. Every package contains:
 
-- Next.js App Router, strict TypeScript, React, Tailwind CSS
-- Vercel AI SDK with OpenRouter and environment-selected model roles
-- Inngest at `/api/inngest` for durable research and refresh jobs
-- Supabase Auth/Postgres; the initial migration enables RLS on every user-owned table
-- Vendor-neutral provider contracts in `lib/providers/contracts.ts`
-- Typed mode registry in `lib/research/modes.ts`; shared routing and orchestration do not branch on hub internals
-- Nine prompt-versioned specialists with strict tool allowlists; Exa is a shared tool rather than a fourth agent
+- `SKILL.md` with concise routing metadata and domain instructions.
+- `agents/jarvis.yaml` with validated intake fields, tools, limits, and specialist lenses.
+- `references/` with prompts loaded only after the skill is selected.
 
-### Agent configuration
+`general-research` is the required fallback. The shared research core—not individual skills—owns security, evidence, citation, execution, and transaction boundaries. Adding a deployed skill folder requires no registry edit.
 
-The three executable domain agents are configured under `agents/finance`, `agents/travel`, and `agents/shopping`. Each directory contains an `agent.yaml` manifest plus Markdown files for the quick, synthesis, and three lens prompts. The YAML is validated at runtime by `lib/agents/config-loader.ts`; it can select only known tool IDs, and each lens must be a subset of its parent agent's tools. Inngest receives only `agentId`/run data and resolves the manifest inside the worker.
+The router can compose up to three skills. Deep Research plans three or four specialists total, shares a 20-source evidence budget, and records structured routing and execution events without storing hidden chain-of-thought.
 
-Production adapters must validate and normalize vendor responses. URL-based shopping intake may extract first-party JSON-LD in a constrained provider; arbitrary server-side URL fetching is not allowed. Tool access is read-only and scoped to each mode.
+Deep Research has bounded failure behavior: model/provider calls receive one SDK retry, Inngest does not rerun failed research steps, each run has a five-minute absolute deadline, and the browser stops polling after five consecutive API failures. Handled provider failures are recorded as terminal and are not re-run.
 
-## MVP boundaries
+## Checks
 
-Jarvis recommends and links outward. It cannot trade, book, purchase, or prepare a transaction. Refresh is hub-open or manual only—there are no scheduled monitors or alerts. Financial output is informational. Travel and commerce observations retain currency, retrieval time, expiry, and a verification notice. Duffel stays off unless `ENABLE_DUFFEL=true` and production access is configured.
+Run `npm test`, `npm run typecheck`, and `npm run build`. Skill packages can also be checked with the skill validator:
 
-The in-memory run store is a development fallback. Production deployments must persist runs through Supabase and authenticate every route; service-role workflow mutations must re-check the stored `user_id` before writing.
+```bash
+for skill in skills/*; do python3 /home/raliu/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$skill"; done
+```
+
+The current in-memory stores are development fallbacks. Migration `0002_skill_architecture.sql` adds skill-aware persistence and trace tables with RLS for Supabase deployments.
+
+## Safety boundaries
+
+Jarvis uses read-only research tools and recommends or links outward. It cannot trade, book, purchase, or prepare a transaction. Financial output is informational; travel and commerce prices and availability require provider verification.

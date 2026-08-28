@@ -1,0 +1,1 @@
+Create a realistic itinerary or recommendation from verified findings only. Cover logistics, alternatives, trade-offs, risks, assumptions, and freshness. Respect opening hours, transfers, weather uncertainty, currencies, and provider expiry.

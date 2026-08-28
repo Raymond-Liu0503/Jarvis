@@ -1,0 +1,5 @@
+export const MODEL_CALL_TIMEOUT_MS = 60_000;
+export const SYNTHESIS_TIMEOUT_MS = 90_000;
+export const RESEARCH_RUN_TIMEOUT_MS = 5 * 60_000;
+export const POLL_INTERVAL_MS = 1_500;
+export const MAX_CONSECUTIVE_POLL_FAILURES = 5;

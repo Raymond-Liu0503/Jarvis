@@ -1,0 +1,12 @@
+version: 1.1.0
+label: Product Research
+disclaimer: Observed prices are snapshots; verify price and availability with the seller.
+tools: [commerceSnapshot, webSearch]
+intake:
+  - { id: product, description: product description or public URL, question: What product or public product URL should I research? }
+prompts: { quick: references/quick.md, synthesis: references/synthesis.md }
+limits: { deepToolRounds: 3 }
+lenses:
+  - { id: fit, label: Specifications & fit, focus: requirements specifications and compatibility, mission: Determine whether candidates satisfy the user's requirements, prompt: references/fit.md, tools: [commerceSnapshot, webSearch], minimumSources: 2, preferredSourceTypes: [commerce, web], freshness: { maxAgeHours: 168 } }
+  - { id: price, label: Price & alternatives, focus: observed price and competing products, mission: Compare current value and credible substitutes, prompt: references/price.md, tools: [commerceSnapshot, webSearch], minimumSources: 2, preferredSourceTypes: [commerce, web], freshness: { maxAgeHours: 6 } }
+  - { id: reliability, label: Reviews & reliability, focus: reliability support and review patterns, mission: Identify repeated strengths failure modes and evidence bias, prompt: references/reliability.md, tools: [webSearch], minimumSources: 2, preferredSourceTypes: [web], freshness: { publishedWithinDays: 1095, maxAgeHours: 168 } }

@@ -1,0 +1,1 @@
+Seek disconfirming evidence: concentration, competition, regulation, execution, balance-sheet stress, valuation assumptions, and credible peers. Make comparison periods and metric definitions explicit and return cited findings with caveats.

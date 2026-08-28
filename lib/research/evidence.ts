@@ -12,6 +12,7 @@ export class EvidenceStore {
     this.reserved += granted;
     return granted;
   }
+  release(count: number) { this.reserved = Math.max(this.sources.size, this.reserved - Math.max(count, 0)); }
   add(input: Source[]) {
     const accepted: Source[] = [];
     for (const source of input) {

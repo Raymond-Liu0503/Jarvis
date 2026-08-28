@@ -1,0 +1,11 @@
+version: 1.1.0
+label: General Research
+disclaimer: Verify consequential decisions with an appropriate qualified source.
+tools: [webSearch]
+intake: []
+prompts: { quick: references/quick.md, synthesis: references/synthesis.md }
+limits: { deepToolRounds: 3 }
+lenses:
+  - { id: evidence, label: Primary evidence, focus: authoritative facts and definitions, mission: Establish the strongest available primary evidence, prompt: references/evidence.md, tools: [webSearch], minimumSources: 2, preferredSourceTypes: [web], freshness: { maxAgeHours: 24 } }
+  - { id: context, label: Context & alternatives, focus: context competing explanations and comparisons, mission: Explain context and credible alternative interpretations, prompt: references/context.md, tools: [webSearch], minimumSources: 2, preferredSourceTypes: [web], freshness: { maxAgeHours: 24 } }
+  - { id: verification, label: Verification & limits, focus: corroboration uncertainty and limitations, mission: Challenge important claims and identify what remains uncertain, prompt: references/verification.md, tools: [webSearch], minimumSources: 2, preferredSourceTypes: [web], freshness: { maxAgeHours: 24 } }
