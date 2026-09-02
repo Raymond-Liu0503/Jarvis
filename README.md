@@ -25,7 +25,19 @@ npm run dev:worker
 
 Alternatively, after Supabase is running and the checkpoint tables are initialized, use `npm run dev:all`. Open `http://localhost:3000`, register a local account, and sign in.
 
-Quick mode requires `OPENROUTER_API_KEY` and `MODEL_FAST`. Postgres-backed Deep Research additionally requires `MODEL_REASONING`, `MODEL_SYNTHESIS`, and the providers used by the selected skills. The default local backend is `RESEARCH_EXECUTION_BACKEND=postgres`; the worker owns queue delivery and LangGraph execution.
+## Shut down locally
+
+Press `Ctrl+C` in the terminal running `npm run dev` or `npm run dev:all`. If the worker is running in a separate terminal, press `Ctrl+C` there as well. Stop the local Supabase services with:
+
+```bash
+npx supabase stop
+```
+
+This stops the containers while preserving the local database volume. Start them again with `npm run supabase:start`.
+
+Quick mode requires `OPENROUTER_API_KEY` and `MODEL_FAST`. Postgres-backed Deep Research additionally requires `MODEL_REASONING`, `MODEL_SYNTHESIS`, and the providers used by the selected skills. `MODEL_WEB_RESEARCH` optionally selects a compact source-reranking model and otherwise uses `MODEL_FAST`; retrieval still works with deterministic ranking when that model is unavailable. The worker owns queue delivery and LangGraph execution.
+
+Web research makes one bounded Exa request per Quick turn or specialist, returns at most ten ranked sources, and caches normalized results per user for six hours by default. `WEB_RESEARCH_CONCURRENCY` defaults to `2`. Model input is capped at 16K estimated tokens. Normal logs include section sizes and provider usage but not prompt text; set `RESEARCH_DEBUG_PAYLOADS=redacted` only in local development for capped, redacted prompt previews.
 
 To apply migrations from a clean local database:
 
@@ -46,7 +58,7 @@ Skills are trusted packages under `skills/` and are discovered automatically. Ev
 
 The router can compose up to three skills. Deep Research plans three or four specialists total, shares a 20-source evidence budget, and records structured routing and execution events without storing hidden chain-of-thought.
 
-Deep Research has bounded failure behavior: model/provider calls receive one SDK retry, queue jobs use leases and fenced retries, each run has a five-minute absolute deadline, and the browser stops polling after five consecutive API failures. Handled provider failures are recorded as terminal and are not re-run.
+Deep Research has bounded failure behavior: model/provider calls receive one SDK retry, queue jobs use leases and fenced retries, and each active execution has a five-minute deadline. The deadline pauses while waiting for human input and restarts on resume. The browser stops polling after five consecutive API failures.
 
 ## Checks
 
@@ -56,7 +68,7 @@ Run `npm test`, `npm run typecheck`, and `npm run build`. Skill packages can als
 for skill in skills/*; do python3 /home/raliu/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$skill"; done
 ```
 
-The legacy Inngest path remains available behind `RESEARCH_EXECUTION_BACKEND=inngest` during migration. The Postgres path stores ownership-protected run state in Supabase and uses a dedicated worker; APIs do not execute research inline.
+The PostgreSQL path stores ownership-protected run state, job attempts, leases, and checkpoints in Supabase and uses a dedicated worker; APIs do not execute research inline. Set `WORKER_CONCURRENCY` and `DATABASE_POOL_MAX` together; the pool must have at least one more connection than worker concurrency.
 
 ## Safety boundaries
 

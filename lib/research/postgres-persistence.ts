@@ -30,7 +30,7 @@ export async function markRunRunning(runId: string, userId: string, plan: Resear
 }
 
 export async function markRunNeedsInput(runId: string, userId: string, interruptId: string, questions: string[]) {
-  await query("update public.research_runs set status = 'needs_input', pending_input = $3, updated_at = now() where id = $1 and user_id = $2", [runId, userId, JSON.stringify({ interruptId, questions })]);
+  await query("update public.research_runs set status = 'needs_input', pending_input = $3, deadline_at = null, updated_at = now() where id = $1 and user_id = $2", [runId, userId, JSON.stringify({ interruptId, questions })]);
 }
 
 export async function markSpecialistProgress(runId: string, userId: string, specialist: { id: string; label: string }, status: string, detail?: string, error?: string) {

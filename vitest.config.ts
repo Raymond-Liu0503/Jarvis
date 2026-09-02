@@ -6,7 +6,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
-    pool: "threads",
+    // Fork isolation reliably tears down provider SDK resources between files.
+    pool: "forks",
+    fileParallelism: false,
     minWorkers: 1,
     maxWorkers: 1,
   },

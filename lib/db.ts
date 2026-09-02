@@ -4,7 +4,7 @@ const globalDb = globalThis as typeof globalThis & { __jarvisPool?: Pool };
 
 export function getPool(): Pool {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not configured");
-  globalDb.__jarvisPool ??= new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+  globalDb.__jarvisPool ??= new Pool({ connectionString: process.env.DATABASE_URL, max: Number(process.env.DATABASE_POOL_MAX ?? 10) });
   return globalDb.__jarvisPool;
 }
 

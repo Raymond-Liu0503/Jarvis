@@ -1,10 +1,11 @@
-import type { ResearchPlan, ResearchReport, SpecialistResult } from "@/lib/contracts";
-import type { PendingInput, RunRecord, SpecialistProgress } from "@/lib/research/store";
+import type { ResearchPlan, ResearchReport, RunStatus, SpecialistProgressState } from "@/lib/contracts";
 import { query } from "@/lib/db";
 
 type Row = Record<string, unknown>;
 export type ResearchActivity = { id: string; type: string; message: string; createdAt: string };
-export type PostgresRunRecord = Omit<RunRecord, "plan" | "deadlineAt"> & { plan: ResearchPlan | null; deadlineAt: string | null; activity: ResearchActivity[] };
+type SpecialistProgress = { id: string; label: string; state: SpecialistProgressState; detail?: string; updatedAt: string; error?: string };
+type PendingInput = { interruptId: string; questions: string[] };
+export type PostgresRunRecord = { id: string; threadId: string; skillIds: string[]; query: string; plan: ResearchPlan | null; status: RunStatus; createdAt: string; updatedAt: string; deadlineAt: string | null; specialists: SpecialistProgress[]; report?: ResearchReport; error?: string; pendingInput?: PendingInput | null; activity: ResearchActivity[] };
 
 function activityMessage(type: string, detail: Record<string, unknown>) {
   const label = typeof detail.label === "string" ? detail.label : "A specialist";
@@ -46,7 +47,7 @@ export async function getPostgresRun(userId: string, runId: string): Promise<Pos
   });
   return {
     id: String(row.id), threadId: String(row.thread_id), skillIds: (row.skill_ids ?? []) as string[],
-    query: String(row.query), plan: (row.plan ?? null) as ResearchPlan | null, status: row.status as RunRecord["status"],
+    query: String(row.query), plan: (row.plan ?? null) as ResearchPlan | null, status: row.status as RunStatus,
     createdAt: String(row.created_at), updatedAt: String(row.updated_at),
     deadlineAt: row.deadline_at ? String(row.deadline_at) : null, specialists, report: report ?? undefined,
     error: row.error ? String(row.error) : undefined, pendingInput: (row.pending_input ?? null) as PendingInput | null, activity,

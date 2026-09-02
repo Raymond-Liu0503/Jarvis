@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai";
 
 export type ProviderResult<T> = { data: T; provider: string; retrievedAt: string; expiresAt: string; delayed?: boolean; sources: Source[] };
 export type ModelRole = "FAST" | "REASONING" | "SYNTHESIS";
-export type SearchOptions = { limit?: number; category?: "company" | "people" | "research paper" | "news" | "personal site" | "financial report"; includeDomains?: string[]; excludeDomains?: string[]; startPublishedDate?: string; endPublishedDate?: string; maxAgeHours?: number };
+export type SearchOptions = { limit?: number; category?: "company" | "people" | "research paper" | "news" | "personal site" | "financial report"; includeDomains?: string[]; excludeDomains?: string[]; startPublishedDate?: string; endPublishedDate?: string; maxAgeHours?: number; additionalQueries?: string[]; signal?: AbortSignal };
 export interface ModelProvider { model(role: ModelRole): LanguageModel; configured(role: ModelRole): boolean; }
 export interface SearchProvider { search(query: string, options?: number | SearchOptions): Promise<ProviderResult<Array<{ title: string; url: string; excerpt: string }>>>; }
 export interface MarketDataProvider { quote(ticker: string): Promise<ProviderResult<{ ticker: string; price: number; currency: string; changePercent: number; marketOpen: boolean }>>; }

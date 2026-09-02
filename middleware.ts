@@ -27,6 +27,9 @@ export async function middleware(request: NextRequest) {
     login.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(login);
   }
+  if (request.nextUrl.pathname.startsWith("/ops") && user?.app_metadata?.role !== "operator") {
+    return new NextResponse("Operator role required", { status: 403 });
+  }
   return response;
 }
 

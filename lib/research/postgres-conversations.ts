@@ -19,7 +19,7 @@ export async function conversationContext(supabase: SupabaseClient, userId: stri
   let size = 0;
   return (data ?? []).filter(message => {
     size += String(message.content).length;
-    return size <= 12_000;
+    return size <= 8_000;
   }).reverse().map(message => ({ role: message.role as ConversationMessage["role"], content: String(message.content) }));
 }
 
