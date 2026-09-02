@@ -46,6 +46,37 @@ describe("bounded web research", () => {
     }
   });
 
+  it("keeps model reranking disabled by default even when a reranker model is configured", async () => {
+    const search = vi.spyOn(exaSearchProvider, "searchCandidates").mockResolvedValue([
+      candidate("a", "https://first.example/article", 0),
+      candidate("b", "https://second.example/article", 1),
+    ]);
+    const previous = {
+      apiKey: process.env.OPENROUTER_API_KEY,
+      database: process.env.DATABASE_URL,
+      enabled: process.env.WEB_RESEARCH_RERANK_ENABLED,
+      model: process.env.MODEL_WEB_RESEARCH,
+    };
+    process.env.OPENROUTER_API_KEY = "test-key";
+    process.env.MODEL_WEB_RESEARCH = "test/reranker";
+    delete process.env.WEB_RESEARCH_RERANK_ENABLED;
+    delete process.env.DATABASE_URL;
+    try {
+      const result = await runWebResearch({ userId: "00000000-0000-0000-0000-000000000001", query: "default reranking test" });
+      expect(search).toHaveBeenCalledTimes(1);
+      expect(result.reranked).toBe(false);
+    } finally {
+      if (previous.apiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previous.apiKey;
+      if (previous.database === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previous.database;
+      if (previous.enabled === undefined) delete process.env.WEB_RESEARCH_RERANK_ENABLED;
+      else process.env.WEB_RESEARCH_RERANK_ENABLED = previous.enabled;
+      if (previous.model === undefined) delete process.env.MODEL_WEB_RESEARCH;
+      else process.env.MODEL_WEB_RESEARCH = previous.model;
+    }
+  });
+
   it("normalizes equivalent cache inputs", () => {
     const base = { userId: "u", query: "  Test   Query ", includeDomains: ["b.com", "a.com"] };
     expect(webResearchCacheKey(base)).toBe(webResearchCacheKey({ ...base, query: "test query", includeDomains: ["a.com", "b.com"] }));

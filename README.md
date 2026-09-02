@@ -35,7 +35,7 @@ npx supabase stop
 
 This stops the containers while preserving the local database volume. Start them again with `npm run supabase:start`.
 
-Quick mode requires `OPENROUTER_API_KEY` and `MODEL_FAST`. Postgres-backed Deep Research additionally requires `MODEL_REASONING`, `MODEL_SYNTHESIS`, and the providers used by the selected skills. `MODEL_WEB_RESEARCH` optionally selects a compact source-reranking model and otherwise uses `MODEL_FAST`; retrieval still works with deterministic ranking when that model is unavailable. The worker owns queue delivery and LangGraph execution.
+Quick mode requires `OPENROUTER_API_KEY` and `MODEL_FAST`. Postgres-backed Deep Research additionally requires `MODEL_REASONING`, `MODEL_SYNTHESIS`, and the providers used by the selected skills. Web-result model reranking is disabled by default; set `WEB_RESEARCH_RERANK_ENABLED=true` to enable it, with `MODEL_WEB_RESEARCH` selecting the reranker and `MODEL_FAST` used as its fallback. Otherwise, retrieval uses deterministic ranking. The worker owns queue delivery and LangGraph execution.
 
 Web research makes one bounded Exa request per Quick turn or specialist, returns at most ten ranked sources, and caches normalized results per user for six hours by default. `WEB_RESEARCH_CONCURRENCY` defaults to `2`. Model input is capped at 16K estimated tokens. Normal logs include section sizes and provider usage but not prompt text; set `RESEARCH_DEBUG_PAYLOADS=redacted` only in local development for capped, redacted prompt previews.
 
