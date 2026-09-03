@@ -1,17 +1,35 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { excerptFromExaResult, exaSearchProvider, type ExaSearchCandidate } from "@/lib/providers/exa";
+vi.mock("@/lib/db", () => ({ query: vi.fn() }));
+import { query } from "@/lib/db";
+import { ExaSearchProvider, excerptFromExaResult, exaSearchProvider, type ExaSearchCandidate } from "@/lib/providers/exa";
 import { assertModelInputBudget, compactSources, estimateTokens, MODEL_INPUT_TOKEN_LIMIT, truncateText } from "@/lib/research/context-budget";
-import { classifyWebResearchError, rankWebCandidates, runWebResearch, webResearchCacheKey } from "@/lib/research/web-research";
+import { classifyWebResearchError, isWebRerankingEnabled, rankWebCandidates, runWebResearch, webResearchCacheKey } from "@/lib/research/web-research";
 import type { Source } from "@/lib/contracts";
 
 const now = "2026-08-28T12:00:00.000Z";
 const candidate = (id: string, url: string, rank: number, excerpt = "useful evidence"): ExaSearchCandidate => ({ id, url, rank, excerpt, title: `Source ${id}`, publishedAt: now, retrievedAt: now, highlightScore: .8 });
 
-afterEach(() => vi.restoreAllMocks());
+const mockedQuery = vi.mocked(query);
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  mockedQuery.mockReset();
+});
 
 describe("bounded web research", () => {
   it("caps Exa highlight arrays before they enter research context", () => {
     expect(excerptFromExaResult({ highlights: ["x".repeat(2_000)] })).toHaveLength(800);
+  });
+
+  it("requests ten candidates with objective-aware 800-character highlights and no query variants", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    await new ExaSearchProvider("test-key").searchCandidates("base query", { limit: 30, highlightQuery: "decision objective" });
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).toMatchObject({ query: "base query", type: "auto", numResults: 10, contents: { highlights: { query: "decision objective", maxCharacters: 800 } } });
+    expect(body).not.toHaveProperty("additionalQueries");
   });
 
   it("deduplicates URLs, limits domains, and ranks stably", () => {
@@ -27,7 +45,7 @@ describe("bounded web research", () => {
     expect(ranked[0].candidate.id).toBe("a");
   });
 
-  it("uses one provider request and returns at most ten compact sources without a reranker", async () => {
+  it("uses one ten-candidate pass when minimum evidence is sufficient", async () => {
     const candidates = Array.from({ length: 14 }, (_, index) => candidate(String(index), `https://source${index}.example/article`, index, "z".repeat(2_000)));
     const search = vi.spyOn(exaSearchProvider, "searchCandidates").mockResolvedValue(candidates);
     const previousKey = process.env.OPENROUTER_API_KEY;
@@ -37,12 +55,109 @@ describe("bounded web research", () => {
     try {
       const result = await runWebResearch({ userId: "00000000-0000-0000-0000-000000000001", query: "bounded test query", limit: 10 });
       expect(search).toHaveBeenCalledTimes(1);
+      expect(search.mock.calls[0][1]).toMatchObject({ limit: 10, highlightQuery: "bounded test query" });
       expect(result.results).toHaveLength(10);
+      expect(result).toMatchObject({ candidateLimit: 10, searchPasses: 1, minimumResults: 2, stopReason: "minimum_met" });
       expect(result.results.every(source => source.excerpt.length <= 800)).toBe(true);
       expect(result.reranked).toBe(false);
     } finally {
       if (previousKey) process.env.OPENROUTER_API_KEY = previousKey;
       if (previousDatabase) process.env.DATABASE_URL = previousDatabase;
+    }
+  });
+
+  it("defaults ordinary Quick Search output to four sources", async () => {
+    const candidates = Array.from({ length: 10 }, (_, index) => candidate(String(index), `https://quick${index}.example/article`, index));
+    vi.spyOn(exaSearchProvider, "searchCandidates").mockResolvedValue(candidates);
+    const previousDatabase = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    try {
+      const result = await runWebResearch({ userId: "u", query: "ordinary quick search" });
+      expect(result.results).toHaveLength(4);
+    } finally {
+      if (previousDatabase === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabase;
+    }
+  });
+
+  it("makes one narrow expansion only when deduplication misses minimumResults", async () => {
+    const search = vi.spyOn(exaSearchProvider, "searchCandidates")
+      .mockResolvedValueOnce([candidate("a", "https://first.example/article", 0)])
+      .mockResolvedValueOnce([
+        candidate("b", "https://agency.gov/report", 0),
+        candidate("c", "https://second.example/report", 1),
+      ]);
+    const previousDatabase = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    try {
+      const result = await runWebResearch({ userId: "u", query: "thin evidence", objective: "verify the material claim", limit: 4, minimumResults: 2 });
+      expect(search).toHaveBeenCalledTimes(2);
+      expect(search.mock.calls[1][0]).toMatch(/official primary authoritative evidence/);
+      expect(result.results).toHaveLength(3);
+      expect(result).toMatchObject({ searchPasses: 2, stopReason: "expanded_minimum_met", candidateCount: 3 });
+    } finally {
+      if (previousDatabase === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabase;
+    }
+  });
+
+  it("preserves partial first-pass evidence when the one expansion fails", async () => {
+    vi.spyOn(exaSearchProvider, "searchCandidates")
+      .mockResolvedValueOnce([candidate("a", "https://first.example/article", 0)])
+      .mockRejectedValueOnce(new Error("503 provider unavailable"));
+    const previousDatabase = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    try {
+      const result = await runWebResearch({ userId: "u", query: "partial evidence", limit: 4, minimumResults: 2 });
+      expect(result.results.map(source => source.id)).toEqual(["a"]);
+      expect(result).toMatchObject({ searchPasses: 2, stopReason: "expansion_failed" });
+      expect(result.limitation).toMatch(/partial first-pass evidence/i);
+    } finally {
+      if (previousDatabase === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabase;
+    }
+  });
+
+  it("caches ten ranked results independently of caller slicing", async () => {
+    const candidates = Array.from({ length: 10 }, (_, index) => candidate(String(index), `https://source${index}.example/article`, index));
+    const search = vi.spyOn(exaSearchProvider, "searchCandidates").mockResolvedValue(candidates);
+    let cachedResults: unknown[] | undefined;
+    mockedQuery.mockImplementation(async (sql: string, parameters?: unknown[]) => {
+      if (sql.startsWith("select")) return { rows: cachedResults ? [{ results: cachedResults, candidate_count: 10, expires_at: "2099-01-01T00:00:00.000Z" }] : [] } as never;
+      cachedResults = JSON.parse(String(parameters?.[4]));
+      return { rows: [] } as never;
+    });
+    const previousDatabase = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://cache-test";
+    try {
+      const first = await runWebResearch({ userId: "u", query: "cache slicing", limit: 4 });
+      const second = await runWebResearch({ userId: "u", query: "cache slicing", limit: 2 });
+      expect(first.results).toHaveLength(4);
+      expect(cachedResults).toHaveLength(10);
+      expect(second.results).toHaveLength(2);
+      expect(second).toMatchObject({ cacheHit: true, searchPasses: 0, stopReason: "cache_hit" });
+      expect(search).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previousDatabase === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabase;
+    }
+  });
+
+  it("bypasses a cache entry that cannot satisfy minimumResults", async () => {
+    mockedQuery.mockResolvedValueOnce({ rows: [{ results: [{ id: "cached" }], candidate_count: 1, expires_at: "2099-01-01T00:00:00.000Z" }] } as never).mockResolvedValue({ rows: [] } as never);
+    const search = vi.spyOn(exaSearchProvider, "searchCandidates").mockResolvedValue([
+      candidate("a", "https://first.example/article", 0),
+      candidate("b", "https://second.example/article", 1),
+    ]);
+    const previousDatabase = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://cache-test";
+    try {
+      const result = await runWebResearch({ userId: "u", query: "undersized cache", limit: 4, minimumResults: 2 });
+      expect(result.cacheHit).toBe(false);
+      expect(search).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previousDatabase === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabase;
     }
   });
 
@@ -74,6 +189,21 @@ describe("bounded web research", () => {
       else process.env.WEB_RESEARCH_RERANK_ENABLED = previous.enabled;
       if (previous.model === undefined) delete process.env.MODEL_WEB_RESEARCH;
       else process.env.MODEL_WEB_RESEARCH = previous.model;
+    }
+  });
+
+  it("enables model reranking only with an explicit true flag", () => {
+    const previous = process.env.WEB_RESEARCH_RERANK_ENABLED;
+    try {
+      delete process.env.WEB_RESEARCH_RERANK_ENABLED;
+      expect(isWebRerankingEnabled()).toBe(false);
+      process.env.WEB_RESEARCH_RERANK_ENABLED = "true";
+      expect(isWebRerankingEnabled()).toBe(true);
+      process.env.WEB_RESEARCH_RERANK_ENABLED = "false";
+      expect(isWebRerankingEnabled()).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.WEB_RESEARCH_RERANK_ENABLED;
+      else process.env.WEB_RESEARCH_RERANK_ENABLED = previous;
     }
   });
 

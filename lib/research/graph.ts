@@ -14,6 +14,8 @@ const ResearchState = Annotation.Root({
   userId: Annotation<string>,
   query: Annotation<string>,
   history: Annotation<Array<{ role: string; content: string }>>({ value: (_, next) => next, default: () => [] }),
+  clarificationRounds: Annotation<number>({ value: (_, next) => next, default: () => 0 }),
+  pendingQuestions: Annotation<string[]>({ value: (_, next) => next, default: () => [] }),
   skillIds: Annotation<string[]>({ value: (_, next) => next, default: () => [] }),
   plan: Annotation<ResearchPlan | null>({ value: (_, next) => next, default: () => null }),
   activeSpecialist: Annotation<PlannedSpecialist | null>({ value: (_, next) => next, default: () => null }),
@@ -33,20 +35,37 @@ async function route(state: ResearchGraphState) {
 }
 
 async function buildPlan(state: ResearchGraphState) {
-  let planned = await planResearch(state.skillIds, state.query, state.history);
-  if (planned.questions?.length) {
-    const answer = interrupt({ questions: planned.questions });
-    planned = await planResearch(state.skillIds, state.query, [...state.history, { role: "user", content: String(answer) }]);
-  }
+  const planned = await planResearch(state.skillIds, state.query, state.history, state.clarificationRounds);
+  if (planned.questions?.length) return { pendingQuestions: planned.questions };
   if (!planned.plan) throw new Error("Research planner did not produce a plan");
   await markRunRunning(state.runId, state.userId, planned.plan);
   await recordExecutionEvent(state.runId, state.userId, "plan.completed", { specialistCount: planned.plan.specialists.length }, "plan.completed");
-  return { plan: planned.plan, outcomes: [] };
+  return { plan: planned.plan, pendingQuestions: [], outcomes: [] };
+}
+
+function requestClarification(state: ResearchGraphState) {
+  if (!state.pendingQuestions.length) throw new Error("Research clarification is missing its questions");
+  const answer = interrupt({ questions: state.pendingQuestions, clarificationRound: state.clarificationRounds + 1 });
+  return {
+    history: [
+      ...state.history,
+      { role: "assistant", content: state.pendingQuestions.join("\n") },
+      { role: "user", content: String(answer) },
+    ],
+    clarificationRounds: state.clarificationRounds + 1,
+    pendingQuestions: [],
+  };
 }
 
 function dispatchSpecialists(state: ResearchGraphState) {
   if (!state.plan) throw new Error("Research plan is missing");
   return state.plan.specialists.slice(0, 4).map(planned => new Send("specialist", { ...state, activeSpecialist: planned, outcomes: [] }));
+}
+
+function continueAfterPlanning(state: ResearchGraphState) {
+  if (state.plan) return dispatchSpecialists(state);
+  if (state.pendingQuestions.length) return "clarify";
+  throw new Error("Research planner produced neither a plan nor clarification questions");
 }
 
 async function specialist(state: ResearchGraphState, config?: { signal?: AbortSignal }) {
@@ -111,11 +130,13 @@ export function createResearchGraph(checkpointer?: BaseCheckpointSaver) {
   return new StateGraph(ResearchState)
     .addNode("route", route)
     .addNode("build_plan", buildPlan)
+    .addNode("clarify", requestClarification)
     .addNode("specialist", specialist)
     .addNode("aggregate", aggregate)
     .addEdge(START, "route")
     .addEdge("route", "build_plan")
-    .addConditionalEdges("build_plan", dispatchSpecialists, ["specialist"])
+    .addConditionalEdges("build_plan", continueAfterPlanning, ["clarify", "specialist"])
+    .addEdge("clarify", "build_plan")
     .addEdge("specialist", "aggregate")
     .addEdge("aggregate", END)
     .compile({ checkpointer });

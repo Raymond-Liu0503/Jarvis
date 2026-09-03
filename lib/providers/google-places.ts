@@ -12,16 +12,24 @@ type GooglePlace = {
   userRatingCount?: number;
   priceLevel?: string;
   types?: string[];
+  businessStatus?: string;
+  currentOpeningHours?: { openNow?: boolean; weekdayDescriptions?: string[]; nextOpenTime?: string; nextCloseTime?: string };
+  regularOpeningHours?: { weekdayDescriptions?: string[] };
+  accessibilityOptions?: Record<string, boolean>;
+  timeZone?: { id?: string };
+  utcOffsetMinutes?: number;
 };
 
 const TTL_MS = 6 * 60 * 60_000;
 const FIELD_MASK = [
   "places.id", "places.name", "places.displayName", "places.formattedAddress", "places.googleMapsUri",
   "places.websiteUri", "places.rating", "places.userRatingCount", "places.priceLevel", "places.types",
+  "places.businessStatus", "places.currentOpeningHours", "places.regularOpeningHours", "places.accessibilityOptions",
+  "places.timeZone", "places.utcOffsetMinutes",
 ].join(",");
 
 export class GooglePlacesProvider implements PlacesProvider {
-  private readonly apiKey = process.env.GOOGLE_PLACES_API_KEY;
+  constructor(private readonly apiKey = process.env.GOOGLE_PLACES_API_KEY) {}
 
   async places(place: string, interests: string[] = []): Promise<ProviderResult<unknown[]>> {
     if (!this.apiKey) throw new Error("GOOGLE_PLACES_API_KEY is not configured");
@@ -37,7 +45,9 @@ export class GooglePlacesProvider implements PlacesProvider {
     const data = (payload.places ?? []).map(item => ({
       id: item.id, name: item.displayName?.text ?? item.name ?? "Unknown place", address: item.formattedAddress,
       mapsUrl: item.googleMapsUri, websiteUrl: item.websiteUri, rating: item.rating, reviewCount: item.userRatingCount,
-      priceLevel: item.priceLevel, types: item.types ?? [],
+      priceLevel: item.priceLevel, types: item.types ?? [], businessStatus: item.businessStatus,
+      openingHours: item.currentOpeningHours, regularOpeningHours: item.regularOpeningHours,
+      accessibility: item.accessibilityOptions, timeZone: item.timeZone?.id, utcOffsetMinutes: item.utcOffsetMinutes,
     }));
     const sources: Source[] = data.flatMap((item, index) => item.mapsUrl ? [{
       id: `google-place-${item.id ?? index}`, canonicalUrl: item.mapsUrl, title: item.name, publisher: "Google Maps",

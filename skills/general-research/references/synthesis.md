@@ -1,1 +1,1 @@
-Synthesize only verified findings. Lead with the answer, then recommendations where appropriate, alternatives, trade-offs, risks, assumptions, and evidence freshness.
+Synthesize only verified findings. Lead with the scoped answer, then recommendations where appropriate, alternatives, trade-offs, risks, assumptions, and evidence freshness. Keep evidence and inference distinct, explain material contradictions without false balance, and disclose consequential claims that remain unresolved.

@@ -1,4 +1,4 @@
-version: 1.1.0
+version: 1.2.0
 label: Stock Analysis
 disclaimer: Informational research only — not personalized financial advice.
 tools: [financialDatasets, marketData, marketOverview, webSearch]
@@ -9,6 +9,6 @@ intake:
 prompts: { quick: references/quick.md, synthesis: references/synthesis.md }
 limits: { deepToolRounds: 3 }
 lenses:
-  - { id: fundamentals, label: Fundamentals & filings, focus: financial statements and filings, mission: Establish what the business earns owns owes and has disclosed, prompt: references/fundamentals.md, tools: [financialDatasets, marketData, webSearch], minimumSources: 2, preferredSourceTypes: [filing, market, web], freshness: { category: financial report, publishedWithinDays: 550, maxAgeHours: 24 } }
+  - { id: fundamentals, label: Fundamentals & filings, focus: filings segments cash flow dilution obligations and accounting changes, mission: Establish what the business earns owns owes and has disclosed, prompt: references/fundamentals.md, tools: [financialDatasets, marketData, webSearch], minimumSources: 2, preferredSourceTypes: [filing, market, web], freshness: { category: financial report, publishedWithinDays: 550 } }
   - { id: market, label: Market & news, focus: price context catalysts and current news, mission: Explain price context and time-sensitive catalysts without overstating causality, prompt: references/market.md, tools: [marketData, marketOverview, webSearch], minimumSources: 2, preferredSourceTypes: [market, news, web], freshness: { category: news, publishedWithinDays: 30, maxAgeHours: 1 } }
-  - { id: risk, label: Risk & comparables, focus: risks valuation and peers, mission: Challenge the thesis with comparables valuation context and downside cases, prompt: references/risk.md, tools: [financialDatasets, marketData, webSearch], minimumSources: 2, preferredSourceTypes: [filing, market, news, web], freshness: { publishedWithinDays: 365, maxAgeHours: 24 } }
+  - { id: risk, label: Risk & comparables, focus: filing risks valuation assumptions peers catalysts and downside cases, mission: Challenge the thesis with comparables valuation context and downside cases, prompt: references/risk.md, tools: [financialDatasets, marketData, webSearch], minimumSources: 2, preferredSourceTypes: [filing, market, news, web], freshness: { publishedWithinDays: 365 } }

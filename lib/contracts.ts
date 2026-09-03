@@ -13,7 +13,7 @@ export const specialistResultSchema = z.object({ specialist: z.string(), summary
 export type SpecialistResult = z.infer<typeof specialistResultSchema>;
 export const specialistProgressStates = ["queued", "planning", "searching", "analyzing", "completed", "failed"] as const;
 export type SpecialistProgressState = (typeof specialistProgressStates)[number];
-export type ToolId = "webSearch" | "marketData" | "marketOverview" | "financialDatasets" | "weather" | "places" | "events" | "flightOffers" | "commerceSnapshot";
+export type ToolId = "webSearch" | "marketData" | "marketOverview" | "financialDatasets" | "weather" | "places" | "events" | "routes" | "travelRequirements" | "flightOffers" | "commerceSnapshot";
 export type EvidencePolicy = {
   preferredSourceTypes: readonly Source["type"][];
   minimumSources: number;
@@ -24,7 +24,7 @@ export type EvidencePolicy = {
     maxAgeHours?: number;
   };
 };
-export type IntakeField = { id: string; description: string; question: string };
+export type IntakeField = { id: string; description: string; question: string; requiredWhen?: string };
 export type SpecialistDefinition = { id: string; skillId: SkillId; label: string; focus: string; mission: string; promptVersion: string; systemPrompt: string; tools: readonly ToolId[]; maxToolRounds: number; evidencePolicy: EvidencePolicy };
 export type ResearchSkill = { id: SkillId; name: string; description: string; version: string; instructions: string; label: string; disclaimer: string; tools: readonly ToolId[]; intake: readonly IntakeField[]; quickPrompt: string; synthesisPrompt: string; specialists: readonly SpecialistDefinition[] };
 export type PlannedSpecialist = { id: string; skillId: SkillId; label: string; focus: string };

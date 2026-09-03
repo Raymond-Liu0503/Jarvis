@@ -21,7 +21,7 @@ const jsonInstruction = (schema: z.ZodType) => `Return exactly one JSON object a
 
 const securitiesPattern = /\b(stock|stocks|ticker|shares?|earnings|filings?|valuation|portfolio|dividend|market cap|p\/e|public company|nasdaq|nyse)\b/i;
 const explicitProductPattern = /\b(product|shopping|headphones?|laptops?|cameras?|televisions?|phones?|appliances?|shoes?|mattress(?:es)?|specifications?|compatibility)\b/i;
-const productIntentPattern = /\b(buy|price|compare|review)\b/i;
+const productIntentPattern = /\b(buy|price|review)\b/i;
 
 function isSecuritiesOnlyQuery(query: string) {
   return securitiesPattern.test(query) && !explicitProductPattern.test(query);
@@ -69,18 +69,33 @@ const planSchema = z.object({
   rationale: z.string(),
 });
 
-export function hasExplicitIntakeValue(skillId: string, fieldId: string, query: string) {
-  if (skillId !== "stock-analysis" || fieldId !== "company") return false;
-  if (/\$[A-Z]{1,5}\b|\b[A-Z]{2,5}\b/.test(query)) return true;
-  const stopwords = new Set(["this", "that", "which", "what", "some", "good", "public", "company", "stock", "share", "shares"]);
-  const candidates = [
-    query.match(/\b([a-z][a-z0-9.&-]{2,})\s+(?:stock|shares?)\b/i)?.[1],
-    query.match(/\b(?:buy|research|analy[sz]e|evaluate|about|is)\s+([a-z][a-z0-9.&-]{2,})\b/i)?.[1],
-  ];
-  return candidates.some(candidate => candidate && !stopwords.has(candidate.toLowerCase()));
+export const CLARIFICATION_SOFT_LIMIT = 5;
+
+export function clarificationPlanningGuidance(clarificationRounds: number) {
+  if (clarificationRounds < CLARIFICATION_SOFT_LIMIT) return "";
+  return ` ${clarificationRounds} clarification rounds have already been completed. Prefer proceeding with explicit reasonable assumptions. Ask again only when the missing detail is genuinely necessary for safety or feasibility; this is a soft threshold, not a hard limit.`;
 }
 
-export async function planResearch(skillIds: string[], query: string, history: Array<{ role: string; content: string }>): Promise<{ plan?: ResearchPlan; questions?: string[] }> {
+export function hasExplicitIntakeValue(skillId: string, fieldId: string, query: string) {
+  if (skillId === "stock-analysis" && fieldId === "company") {
+    if (/\$[A-Z]{1,5}\b|\b[A-Z]{2,5}\b/.test(query)) return true;
+    const stopwords = new Set(["this", "that", "which", "what", "some", "good", "public", "company", "stock", "share", "shares"]);
+    const candidates = [
+      query.match(/\b([a-z][a-z0-9.&-]{2,})\s+(?:stock|shares?)\b/i)?.[1],
+      query.match(/\b(?:buy|research|analy[sz]e|evaluate|about|is)\s+([a-z][a-z0-9.&-]{2,})\b/i)?.[1],
+    ];
+    return candidates.some(candidate => candidate && !stopwords.has(candidate.toLowerCase()));
+  }
+  if (skillId === "product-research" && fieldId === "product") return explicitProductPattern.test(query) || /https?:\/\//i.test(query) || /\bcompare\s+\S+\s+(?:and|vs\.?|versus)\s+\S+/i.test(query);
+  if (skillId === "product-research" && fieldId === "requirements") return /\b(?:budget|under|maximum|at most|for (?:my|a|an|the)|must|need|require|compatible|fit|size|feature|priority|prefer|use case|warranty)\b|[$€£]\s?\d/i.test(query);
+  if (skillId === "travel-planning" && fieldId === "destination") return /\b(?:to|in|visit|around|destination)\s+[A-Z][\p{L}.' -]{1,40}/u.test(query);
+  if (skillId === "travel-planning" && fieldId === "dates") return /\b(?:20\d{2}-\d{1,2}-\d{1,2}|today|tomorrow|next\s+\w+|this\s+\w+|january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(query);
+  if (skillId === "travel-planning" && fieldId === "origin") return /\b(?:from|departing|leaving|flying out of|based in)\s+[A-Z][\p{L}.' -]{1,40}/u.test(query);
+  if (skillId === "travel-planning" && fieldId === "traveller-constraints") return /\b(?:passport|citizen|nationality|visa|wheelchair|accessible|mobility|allerg|diet|child|children|infant|senior|medical|travell?ers?|passengers?)\b/i.test(query);
+  return false;
+}
+
+export async function planResearch(skillIds: string[], query: string, history: Array<{ role: string; content: string }>, clarificationRounds = 0): Promise<{ plan?: ResearchPlan; questions?: string[] }> {
   const skills = skillIds.map(getSkill);
   const all = skills.flatMap(skill => skill.specialists);
   const fallback = (): ResearchPlan => {
@@ -100,14 +115,15 @@ export async function planResearch(skillIds: string[], query: string, history: A
   try {
     const result = await generateText({
       model: modelProvider.model("REASONING"),
-      system: `Validate required intake and select 3 or 4 relevant lenses total, including at least one from each skill. A ticker or explicitly named public company in the request satisfies stock-analysis.company; do not ask for its ticker separately. Return only listed IDs and one concise rationale.\n${jsonInstruction(planSchema)}`,
+      system: `Validate intake and select 3 or 4 relevant lenses total, including at least one from each skill. Treat each intake field's requiredWhen as conditional: mark it missing only when its absence would materially change feasibility, safety, or the recommendation. Otherwise proceed and state a reasonable assumption in the plan rationale. A ticker or explicitly named public company satisfies stock-analysis.company.${clarificationPlanningGuidance(clarificationRounds)} Return only listed IDs and one concise rationale.\n${jsonInstruction(planSchema)}`,
       prompt: `Request: ${query}\nContext: ${JSON.stringify(history)}\nSkills: ${JSON.stringify(skills.map(skill => ({ id: skill.id, intake: skill.intake, lenses: skill.specialists.map(lens => ({ id: lens.id, mission: lens.mission })) })))}`,
       ...STRUCTURED_GENERATION_SETTINGS,
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS),
     });
     const output = requireObjectFromText(result.text, planSchema);
-    const genuinelyMissing = output.missing.filter(item => !hasExplicitIntakeValue(item.skillId, item.fieldId, query));
+    const intakeContext = `${history.map(item => item.content).join(" ")} ${query}`;
+    const genuinelyMissing = output.missing.filter(item => !hasExplicitIntakeValue(item.skillId, item.fieldId, intakeContext));
     if (genuinelyMissing.length) {
       const questions = genuinelyMissing.flatMap(item => {
         const field = getSkill(item.skillId).intake.find(candidate => candidate.id === item.fieldId);

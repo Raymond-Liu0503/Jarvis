@@ -37,7 +37,17 @@ This stops the containers while preserving the local database volume. Start them
 
 Quick mode requires `OPENROUTER_API_KEY` and `MODEL_FAST`. Postgres-backed Deep Research additionally requires `MODEL_REASONING`, `MODEL_SYNTHESIS`, and the providers used by the selected skills. Web-result model reranking is disabled by default; set `WEB_RESEARCH_RERANK_ENABLED=true` to enable it, with `MODEL_WEB_RESEARCH` selecting the reranker and `MODEL_FAST` used as its fallback. Otherwise, retrieval uses deterministic ranking. The worker owns queue delivery and LangGraph execution.
 
-Web research makes one bounded Exa request per Quick turn or specialist, returns at most ten ranked sources, and caches normalized results per user for six hours by default. `WEB_RESEARCH_CONCURRENCY` defaults to `2`. Model input is capped at 16K estimated tokens. Normal logs include section sizes and provider usage but not prompt text; set `RESEARCH_DEBUG_PAYLOADS=redacted` only in local development for capped, redacted prompt previews.
+Web research normally makes one ten-candidate Exa request per Quick turn or specialist; it makes one narrow expansion only when deduplication misses the minimum evidence threshold. It returns at most ten ranked sources and caches up to ten normalized results per user for six hours by default. `WEB_RESEARCH_CONCURRENCY` defaults to `2`. Model input is capped at 16K estimated tokens. Normal logs include section sizes and provider usage but not prompt text; set `RESEARCH_DEBUG_PAYLOADS=redacted` only in local development for capped, redacted prompt previews.
+
+Configured structured providers are exposed as read-only research tools:
+
+- Financial Datasets statements, metrics, and company facts require both funded access and `ENABLE_FINANCIAL_DATASETS=true`; the API key alone does not expose the tool. `SEC_USER_AGENT` enables free primary SEC filings.
+- `ALPHA_VANTAGE_API_KEY` supplies quotes, market status, and movers. Default-access quote data is marked delayed because it may be end-of-day.
+- `OPENWEATHER_API_KEY`, `TICKETMASTER_API_KEY`, and `GOOGLE_PLACES_API_KEY` supply short-range forecasts, events, and place details.
+- Google Routes uses `GOOGLE_MAPS_API_KEY`, falling back to `GOOGLE_PLACES_API_KEY`; the selected key must have Routes API access.
+- Sherpa travel requirements are disabled by default. They require both `ENABLE_SHERPA=true` and `SHERPA_API_KEY`.
+
+Each Deep specialist performs its Exa evidence pass first and then may use structured providers within the skill's shared three-call ceiling. Missing exact inputs such as a ticker, passport nationality, travel date, or route endpoint cause the model to skip that provider. Flight offers and commerce snapshots remain unavailable; `ENABLE_DUFFEL=false` does not activate an adapter.
 
 To apply migrations from a clean local database:
 

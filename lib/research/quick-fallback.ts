@@ -1,5 +1,10 @@
 import type { Source } from "@/lib/contracts";
 
+export function quickToolErrorMessage(toolName: string, error: unknown) {
+  const detail = error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown provider error";
+  return `${toolName} failed: ${detail}`.slice(0, 500);
+}
+
 export function quickEvidenceFallback(sources: Source[]) {
   const usable = sources.filter(source => source.excerpt.trim()).slice(0, 4);
   if (!usable.length) return undefined;

@@ -16,6 +16,7 @@ export type WebResearchInput = SearchOptions & {
   query: string;
   objective?: string;
   limit?: number;
+  minimumResults?: number;
   abortSignal?: AbortSignal;
 };
 
@@ -30,8 +31,12 @@ export type RankedWebSource = Source & {
 export type WebResearchResult = {
   results: RankedWebSource[];
   candidateCount: number;
+  candidateLimit: number;
   cacheHit: boolean;
   reranked: boolean;
+  searchPasses: number;
+  minimumResults: number;
+  stopReason: "minimum_met" | "expanded_minimum_met" | "expanded_exhausted" | "expansion_failed" | "cache_hit";
   limitation?: string;
 };
 
@@ -40,7 +45,9 @@ export type WebResearchDependencies = { onEvent?: WebResearchEvent };
 
 type CachedRow = { results: RankedWebSource[]; candidate_count: number; expires_at: string };
 
-const CACHE_VERSION = "web-research-v1";
+const CACHE_VERSION = "web-research-v2";
+const CANDIDATE_LIMIT = 10;
+const MAX_CACHED_RESULTS = 10;
 const rerankSchema = z.object({ ranked: z.array(z.object({ sourceId: z.string(), relevanceScore: z.number().min(0).max(1), reason: z.string().max(160) })).max(10), coverageGaps: z.array(z.string().max(160)).max(3).default([]) });
 
 class Semaphore {
@@ -87,7 +94,7 @@ async function writeCache(userId: string, key: string, input: WebResearchInput, 
   if (!process.env.DATABASE_URL) return;
   const ttlHours = input.maxAgeHours ?? Math.max(1, Number(process.env.WEB_RESEARCH_CACHE_TTL_HOURS ?? 6));
   try {
-    await query("insert into public.web_research_cache (user_id,cache_key,schema_version,request,results,candidate_count,expires_at) values ($1,$2,$3,$4,$5,$6,now()+make_interval(hours=>$7)) on conflict (user_id,cache_key) do update set request=excluded.request,results=excluded.results,candidate_count=excluded.candidate_count,expires_at=excluded.expires_at,updated_at=now()", [userId, key, CACHE_VERSION, JSON.stringify({ query: input.query, objective: input.objective, category: input.category }), JSON.stringify(result.results.map(item => ({ ...item, cacheHit: false, stale: false }))), result.candidateCount, ttlHours]);
+    await query("insert into public.web_research_cache (user_id,cache_key,schema_version,request,results,candidate_count,expires_at) values ($1,$2,$3,$4,$5,$6,now()+make_interval(hours=>$7)) on conflict (user_id,cache_key) do update set request=excluded.request,results=excluded.results,candidate_count=excluded.candidate_count,expires_at=excluded.expires_at,updated_at=now()", [userId, key, CACHE_VERSION, JSON.stringify({ query: input.query, objective: input.objective, category: input.category }), JSON.stringify(result.results.slice(0, MAX_CACHED_RESULTS).map(item => ({ ...item, cacheHit: false, stale: false }))), result.candidateCount, ttlHours]);
   } catch (error) {
     if ((error as { code?: string }).code !== "42P01") console.warn("Could not write web-research cache", { error });
   }
@@ -157,7 +164,7 @@ function sourceFromCandidate(candidate: ExaSearchCandidate, score: number): Rank
 }
 
 async function optionalRerank(input: WebResearchInput, sources: RankedWebSource[], onEvent?: WebResearchEvent) {
-  const rerankingEnabled = process.env.WEB_RESEARCH_RERANK_ENABLED?.trim().toLowerCase() === "true";
+  const rerankingEnabled = isWebRerankingEnabled();
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = process.env.MODEL_WEB_RESEARCH || process.env.MODEL_FAST;
   if (!rerankingEnabled || !apiKey || !model || sources.length < 2) return { sources: sources.slice(0, 10), reranked: false };
@@ -188,6 +195,10 @@ async function optionalRerank(input: WebResearchInput, sources: RankedWebSource[
   }
 }
 
+export function isWebRerankingEnabled() {
+  return process.env.WEB_RESEARCH_RERANK_ENABLED?.trim().toLowerCase() === "true";
+}
+
 export function classifyWebResearchError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (/429|rate.?limit|quota/i.test(message)) return "rate_limit";
@@ -201,22 +212,58 @@ const WebResearchState = Annotation.Root({
   input: Annotation<WebResearchInput>,
   ranked: Annotation<RankedWebSource[]>({ value: (_, next) => next, default: () => [] }),
   candidateCount: Annotation<number>({ value: (_, next) => next, default: () => 0 }),
+  searchPasses: Annotation<number>({ value: (_, next) => next, default: () => 0 }),
+  stopReason: Annotation<WebResearchResult["stopReason"]>({ value: (_, next) => next, default: () => "minimum_met" }),
+  limitation: Annotation<string | undefined>({ value: (_, next) => next, default: () => undefined }),
   result: Annotation<WebResearchResult | null>({ value: (_, next) => next, default: () => null }),
 });
 
+function requestedLimit(input: WebResearchInput) {
+  return Math.min(10, Math.max(1, input.limit ?? 4));
+}
+
+function requiredMinimum(input: WebResearchInput) {
+  return Math.min(requestedLimit(input), Math.max(1, input.minimumResults ?? 2));
+}
+
+function highlightQuery(input: WebResearchInput) {
+  return truncateText(input.objective?.trim() || input.query, 500);
+}
+
+function sliceForCaller(result: WebResearchResult, input: WebResearchInput): WebResearchResult {
+  const limit = requestedLimit(input);
+  const results = result.results.slice(0, limit);
+  return { ...result, results, limitation: result.limitation ?? (results.length < limit ? "Fewer valid, distinct results were available." : undefined) };
+}
+
 export function createWebResearchSubgraph(dependencies: WebResearchDependencies = {}) {
   const retrieve = async (state: typeof WebResearchState.State) => {
-    const additionalQueries = [
-      `${state.input.query} ${state.input.objective ?? "primary official source"}`,
-      `${state.input.query} independent verification risks alternatives`,
-    ].map(value => truncateText(value, 500));
-    const provider = await semaphore.use(() => exaSearchProvider.searchCandidates(state.input.query, { ...state.input, limit: 30, additionalQueries, signal: state.input.abortSignal }));
-    const ranked = rankWebCandidates(state.input, provider).slice(0, 20).map(item => sourceFromCandidate(item.candidate, item.score));
-    return { ranked, candidateCount: provider.length };
+    const options = { ...state.input, limit: CANDIDATE_LIMIT, highlightQuery: highlightQuery(state.input), signal: state.input.abortSignal };
+    const first = await semaphore.use(() => exaSearchProvider.searchCandidates(state.input.query, options));
+    let candidates = first;
+    let rankedCandidates = rankWebCandidates(state.input, candidates);
+    let searchPasses = 1;
+    let stopReason: WebResearchResult["stopReason"] = "minimum_met";
+    let limitation: string | undefined;
+    if (rankedCandidates.length < requiredMinimum(state.input)) {
+      searchPasses = 2;
+      const expansionQuery = truncateText(`${state.input.query} ${state.input.objective ?? ""} official primary authoritative evidence`, 500);
+      try {
+        const expansion = await semaphore.use(() => exaSearchProvider.searchCandidates(expansionQuery, { ...options, highlightQuery: highlightQuery(state.input) }));
+        candidates = [...first, ...expansion];
+        rankedCandidates = rankWebCandidates(state.input, candidates);
+        stopReason = rankedCandidates.length >= requiredMinimum(state.input) ? "expanded_minimum_met" : "expanded_exhausted";
+      } catch {
+        stopReason = "expansion_failed";
+        limitation = "The primary-evidence expansion failed; partial first-pass evidence was preserved.";
+      }
+    }
+    const ranked = rankedCandidates.slice(0, MAX_CACHED_RESULTS).map(item => sourceFromCandidate(item.candidate, item.score));
+    return { ranked, candidateCount: candidates.length, searchPasses, stopReason, limitation };
   };
   const rerank = async (state: typeof WebResearchState.State) => {
     const outcome = await optionalRerank(state.input, state.ranked, dependencies.onEvent);
-    return { result: { results: outcome.sources.slice(0, Math.min(10, state.input.limit ?? 10)), candidateCount: state.candidateCount, cacheHit: false, reranked: outcome.reranked, limitation: outcome.sources.length < Math.min(10, state.input.limit ?? 10) ? "Fewer valid, distinct results were available." : undefined } };
+    return { result: { results: outcome.sources.slice(0, MAX_CACHED_RESULTS), candidateCount: state.candidateCount, candidateLimit: CANDIDATE_LIMIT, cacheHit: false, reranked: outcome.reranked, searchPasses: state.searchPasses, minimumResults: requiredMinimum(state.input), stopReason: state.stopReason, limitation: state.limitation ?? (outcome.sources.length < requiredMinimum(state.input) ? "The minimum distinct-evidence threshold was not met." : undefined) } };
   };
   return new StateGraph(WebResearchState).addNode("retrieve", retrieve).addNode("rerank", rerank).addEdge(START, "retrieve").addEdge("retrieve", "rerank").addEdge("rerank", END).compile();
 }
@@ -225,19 +272,20 @@ export async function runWebResearch(input: WebResearchInput, dependencies: WebR
   const started = Date.now();
   const key = webResearchCacheKey(input);
   const cached = await readCache(input.userId, key);
-  if (cached) {
-    const result = { results: cached.results.slice(0, Math.min(10, input.limit ?? 10)).map(source => ({ ...source, cacheHit: true, stale: false })), candidateCount: cached.candidate_count, cacheHit: true, reranked: cached.results.some(source => source.modelScore !== undefined) };
-    await dependencies.onEvent?.("web_research.completed", { cacheHit: true, candidateCount: result.candidateCount, resultCount: result.results.length, latencyMs: Date.now() - started });
+  if (cached && cached.results.length >= requiredMinimum(input)) {
+    const result: WebResearchResult = { results: cached.results.slice(0, requestedLimit(input)).map(source => ({ ...source, cacheHit: true, stale: false })), candidateCount: cached.candidate_count, candidateLimit: CANDIDATE_LIMIT, cacheHit: true, reranked: cached.results.some(source => source.modelScore !== undefined), searchPasses: 0, minimumResults: requiredMinimum(input), stopReason: "cache_hit" };
+    await dependencies.onEvent?.("web_research.completed", { cacheHit: true, candidateCount: result.candidateCount, candidateLimit: CANDIDATE_LIMIT, resultCount: result.results.length, searchPasses: 0, minimumResults: result.minimumResults, stopReason: result.stopReason, latencyMs: Date.now() - started });
     return result;
   }
   try {
     const state = await createWebResearchSubgraph(dependencies).invoke({ input });
     if (!state.result) throw new Error("Web-research subgraph returned no result");
     await writeCache(input.userId, key, input, state.result);
-    await dependencies.onEvent?.("web_research.completed", { cacheHit: false, candidateCount: state.result.candidateCount, resultCount: state.result.results.length, reranked: state.result.reranked, latencyMs: Date.now() - started });
-    return state.result;
+    const result = sliceForCaller(state.result, input);
+    await dependencies.onEvent?.("web_research.completed", { cacheHit: false, candidateCount: result.candidateCount, candidateLimit: CANDIDATE_LIMIT, resultCount: result.results.length, reranked: result.reranked, searchPasses: result.searchPasses, minimumResults: result.minimumResults, stopReason: result.stopReason, latencyMs: Date.now() - started });
+    return result;
   } catch (error) {
-    await dependencies.onEvent?.("web_research.failed", { cacheHit: false, latencyMs: Date.now() - started, error: classifyWebResearchError(error), message: error instanceof Error ? error.message : String(error) });
+    await dependencies.onEvent?.("web_research.failed", { cacheHit: false, candidateLimit: CANDIDATE_LIMIT, minimumResults: requiredMinimum(input), stopReason: "provider_failed", latencyMs: Date.now() - started, error: classifyWebResearchError(error), message: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }

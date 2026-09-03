@@ -4,7 +4,7 @@ import { parse } from "yaml";
 import { z } from "zod";
 import type { EvidencePolicy, ResearchSkill, SpecialistDefinition, ToolId } from "@/lib/contracts";
 
-const toolIds = ["webSearch", "marketData", "marketOverview", "financialDatasets", "weather", "places", "events", "flightOffers", "commerceSnapshot"] as const;
+const toolIds = ["webSearch", "marketData", "marketOverview", "financialDatasets", "weather", "places", "events", "routes", "travelRequirements", "flightOffers", "commerceSnapshot"] as const;
 const sourceTypes = ["filing", "news", "market", "weather", "place", "event", "commerce", "web"] as const;
 const frontmatterSchema = z.object({ name: z.string().regex(/^[a-z][a-z0-9-]+$/), description: z.string().min(20) });
 const freshnessSchema = z.object({
@@ -12,7 +12,7 @@ const freshnessSchema = z.object({
   publishedWithinDays: z.number().int().positive().optional(),
   maxAgeHours: z.number().int().nonnegative().optional(),
 });
-const manifestSchema = z.object({ version: z.string().regex(/^\d+\.\d+\.\d+$/), label: z.string().min(1), disclaimer: z.string().min(1), tools: z.array(z.enum(toolIds)).min(1), intake: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9-]+$/), description: z.string().min(1), question: z.string().min(1) })).default([]), prompts: z.object({ quick: z.string(), synthesis: z.string() }), limits: z.object({ deepToolRounds: z.number().int().min(1).max(8) }), lenses: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9-]+$/), label: z.string(), focus: z.string(), mission: z.string(), prompt: z.string(), tools: z.array(z.enum(toolIds)).min(1), minimumSources: z.number().int().positive(), preferredSourceTypes: z.array(z.enum(sourceTypes)).min(1), freshness: freshnessSchema.optional() })).min(1) });
+const manifestSchema = z.object({ version: z.string().regex(/^\d+\.\d+\.\d+$/), label: z.string().min(1), disclaimer: z.string().min(1), tools: z.array(z.enum(toolIds)).min(1), intake: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9-]+$/), description: z.string().min(1), question: z.string().min(1), requiredWhen: z.string().min(1).optional() })).default([]), prompts: z.object({ quick: z.string(), synthesis: z.string() }), limits: z.object({ deepToolRounds: z.number().int().min(1).max(8) }), lenses: z.array(z.object({ id: z.string().regex(/^[a-z][a-z0-9-]+$/), label: z.string(), focus: z.string(), mission: z.string(), prompt: z.string(), tools: z.array(z.enum(toolIds)).min(1), minimumSources: z.number().int().positive(), preferredSourceTypes: z.array(z.enum(sourceTypes)).min(1), freshness: freshnessSchema.optional() })).min(1) });
 
 function safeRead(root: string, relative: string) { const file = path.resolve(root, relative); if (!file.startsWith(`${root}${path.sep}`)) throw new Error(`Skill reference escapes package: ${relative}`); if (!fs.existsSync(file)) throw new Error(`Skill reference not found: ${file}`); return fs.readFileSync(file, "utf8").trim(); }
 function readSkill(root: string): ResearchSkill {

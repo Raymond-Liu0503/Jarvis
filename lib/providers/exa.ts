@@ -8,18 +8,18 @@ export const excerptFromExaResult = (result: Pick<ExaResult, "highlights" | "tex
 
 /** Server-side Exa adapter. Returned web content is untrusted evidence. */
 export class ExaSearchProvider implements SearchProvider {
-  private readonly apiKey = process.env.EXA_API_KEY;
+  constructor(private readonly apiKey = process.env.EXA_API_KEY) {}
 
   async searchCandidates(query: string, input: SearchOptions = {}): Promise<ExaSearchCandidate[]> {
     if (!this.apiKey) throw new Error("EXA_API_KEY is not configured");
     const options = input;
-    const limit = options.limit ?? 30;
+    const limit = options.limit ?? 10;
     const retrievedAt = new Date();
     const timeout = AbortSignal.timeout(15_000);
     const response = await fetch("https://api.exa.ai/search", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": this.apiKey },
-      body: JSON.stringify({ query, additionalQueries: options.additionalQueries?.slice(0, 2), type: "auto", numResults: Math.min(Math.max(limit, 1), 30), category: options.category, includeDomains: options.includeDomains, excludeDomains: options.excludeDomains, startPublishedDate: options.startPublishedDate, endPublishedDate: options.endPublishedDate, contents: { highlights: true, maxAgeHours: options.maxAgeHours } }),
+      body: JSON.stringify({ query, type: "auto", numResults: Math.min(Math.max(limit, 1), 10), category: options.category, includeDomains: options.includeDomains, excludeDomains: options.excludeDomains, startPublishedDate: options.startPublishedDate, endPublishedDate: options.endPublishedDate, contents: { highlights: { query: options.highlightQuery ?? query, maxCharacters: 800 }, maxAgeHours: options.maxAgeHours } }),
       signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
     });
     if (!response.ok) throw new Error(`Exa search failed (${response.status})`);

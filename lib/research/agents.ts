@@ -1,6 +1,6 @@
-import { generateText } from "ai";
+import { generateText, stepCountIs, type Tool } from "ai";
 import { z } from "zod";
-import type { Finding, ResearchReport, Source, SpecialistDefinition, SpecialistResult } from "@/lib/contracts";
+import type { Finding, ResearchReport, Source, SpecialistDefinition, SpecialistResult, ToolId } from "@/lib/contracts";
 import { findingSchema } from "@/lib/contracts";
 import { modelProvider, STRUCTURED_GENERATION_SETTINGS } from "@/lib/providers/model";
 import { EvidenceStore, ToolCallBudget } from "@/lib/research/evidence";
@@ -38,10 +38,39 @@ export function searchOptionsFor(definition: SpecialistDefinition, now = new Dat
   return { category: freshness.category, startPublishedDate, endPublishedDate: startPublishedDate ? now.toISOString() : undefined, maxAgeHours: freshness.maxAgeHours };
 }
 
+export function specialistSourceTarget(definition: SpecialistDefinition) {
+  return Math.min(6, Math.max(4, definition.evidencePolicy.minimumSources + 2));
+}
+
 export function fallbackSpecialistResult(definition: SpecialistDefinition, sources: Source[], summary?: string): SpecialistResult {
   const usable = sources.filter(source => source.excerpt.trim()).slice(0, Math.max(definition.evidencePolicy.minimumSources, 3));
   if (usable.length < definition.evidencePolicy.minimumSources) throw new Error(`${definition.label} could not recover enough evidence after malformed model output`);
   return { specialist: definition.id, summary: summary?.trim() || `${definition.label} retrieved ${usable.length} sources, but the reasoning model did not return valid structured analysis. The report can use the evidence excerpts below with reduced confidence.`, findings: usable.map(source => ({ specialist: definition.id, claim: truncateText(source.excerpt, 400), confidence: .35, sourceIds: [source.id], caveats: ["Degraded evidence-only finding: structured model output could not be validated."] })), limitations: [summary ? "Degraded structured output; a source-cited analysis was preserved." : "Degraded structured output; findings preserve retrieved source excerpts rather than model synthesis."] };
+}
+
+export function structuredToolsFor(tools: Record<string, Tool>) {
+  return Object.fromEntries(Object.entries(tools).filter(([name]) => name !== "web_research"));
+}
+
+async function collectStructuredEvidence(input: SpecialistInput, context: ResearchToolContext, tools: Record<string, Tool>, unavailable: ToolId[]) {
+  const structuredTools = structuredToolsFor(tools);
+  const remaining = input.definition.maxToolRounds - context.calls.count();
+  if (remaining <= 0 || Object.keys(structuredTools).length === 0) return;
+  const system = `${RESEARCH_CORE_PROMPT}\nYou are selecting structured evidence for one research specialist. Use only tools that materially improve the mission. Never guess a ticker, passport nationality, country code, location, date, or route endpoint; skip any tool whose required input is not explicit in the request. Make at most ${remaining} tool calls, then stop. Do not answer the research question.`;
+  const prompt = `Mission: ${truncateText(input.definition.mission, 800)}\nFocus: ${truncateText(input.definition.focus, 800)}\nRequest: ${truncateText(input.query, 4_000)}\nAlready collected sources: ${context.evidence.all().length}\nUnavailable capabilities: ${unavailable.join(", ") || "none"}.`;
+  const metrics = logModelInput("specialist.tools", { system, prompt });
+  const started = Date.now();
+  try {
+    const result = await generateText({
+      model: modelProvider.model("REASONING"), system, prompt, tools: structuredTools,
+      stopWhen: stepCountIs(remaining + 1), ...STRUCTURED_GENERATION_SETTINGS,
+      maxOutputTokens: 800, maxRetries: 0,
+      abortSignal: input.abortSignal ? AbortSignal.any([input.abortSignal, AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS)]) : AbortSignal.timeout(MODEL_CALL_TIMEOUT_MS),
+    });
+    await input.onEvent?.("model.specialist_tools", { specialistId: input.definition.id, model: process.env.MODEL_REASONING, status: "completed", latencyMs: Date.now() - started, estimatedInputTokens: metrics.estimatedTokens, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, sourceCount: context.evidence.all().length, toolCalls: context.calls.count() });
+  } catch (error) {
+    await input.onEvent?.("model.specialist_tools", { specialistId: input.definition.id, model: process.env.MODEL_REASONING, status: "partial", latencyMs: Date.now() - started, estimatedInputTokens: metrics.estimatedTokens, error: classifyWebResearchError(error), sourceCount: context.evidence.all().length, toolCalls: context.calls.count() });
+  }
 }
 
 type SpecialistInput = { definition: SpecialistDefinition; query: string; userId?: string; runId?: string; threadId?: string; evidence: EvidenceStore; abortSignal?: AbortSignal; onProgress?: ToolProgress; onEvent?: WebResearchEvent };
@@ -49,13 +78,14 @@ type SpecialistInput = { definition: SpecialistDefinition; query: string; userId
 export async function runSpecialist(input: SpecialistInput): Promise<SpecialistResult> {
   const { definition, query, evidence, onProgress, onEvent } = input;
   await onProgress?.("planning", definition.mission);
-  const context: ResearchToolContext = { userId: input.userId ?? "00000000-0000-0000-0000-000000000000", runId: input.runId, threadId: input.threadId, specialistId: definition.id, objective: `${definition.mission}. Focus: ${definition.focus}`, abortSignal: input.abortSignal, evidence, calls: new ToolCallBudget(1), onProgress, onEvent };
+  const context: ResearchToolContext = { userId: input.userId ?? "00000000-0000-0000-0000-000000000000", runId: input.runId, threadId: input.threadId, specialistId: definition.id, objective: `${definition.mission}. Focus: ${definition.focus}`, abortSignal: input.abortSignal, evidence, calls: new ToolCallBudget(definition.maxToolRounds), onProgress, onEvent };
   const { tools, unavailable } = createResearchTools(definition.tools, context);
   if (!tools.web_research) throw new Error(`${definition.label} requires the configured web-search provider`);
 
   let collectionError: unknown;
-  try { await collectWebEvidence({ query: truncateText(`${query} ${definition.focus}`, 500), limit: 10, ...searchOptionsFor(definition) }, context); }
+  try { await collectWebEvidence({ query: truncateText(`${query} ${definition.focus}`, 500), limit: specialistSourceTarget(definition), minimumResults: definition.evidencePolicy.minimumSources, ...searchOptionsFor(definition) }, context); }
   catch (error) { collectionError = error; }
+  await collectStructuredEvidence(input, context, tools, unavailable);
   const sources = evidence.all();
   if (sources.length < definition.evidencePolicy.minimumSources) {
     if (collectionError instanceof Error) throw collectionError;
