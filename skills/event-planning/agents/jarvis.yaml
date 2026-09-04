@@ -1,0 +1,95 @@
+version: 1.0.0
+label: Event Planning
+disclaimer: Costs and availability are snapshots; verify venue, supplier, contract, permit, and safety requirements.
+tools:
+  - webSearch
+  - places
+  - events
+  - routes
+  - weather
+intake:
+  - id: event-brief
+    description: purpose, audience, attendance, format, objectives, and success measures
+    question: What is the event's purpose, audience, expected attendance, format, and definition of success?
+    requiredWhen: Missing purpose, audience, scale, or format would materially change feasibility or the recommendation.
+  - id: location-dates
+    description: candidate location, date or window, duration, and flexibility
+    question: Which location and date or date window should the event plan around?
+    requiredWhen: Location or timing changes venue feasibility, suppliers, transport, weather exposure, or cost.
+  - id: constraints
+    description: budget, accessibility, inclusion, food, sustainability, technology, policy, and risk constraints
+    question: Which budget, accessibility, inclusion, food, sustainability, technology, or risk constraints must the event meet?
+    requiredWhen: A missing constraint could disqualify an option or materially change the operating plan.
+prompts:
+  quick: references/quick.md
+  synthesis: references/synthesis.md
+limits:
+  deepToolRounds: 3
+lenses:
+  - id: strategy
+    label: Strategy & measurement
+    focus: needs assessment, purpose, audience, format, feasibility, objectives, KPIs, and measurement plan
+    mission: Define a feasible event brief whose objectives and success measures drive later choices.
+    prompt: references/strategy.md
+    tools:
+      - webSearch
+      - places
+      - events
+    minimumSources: 2
+    preferredSourceTypes:
+      - place
+      - event
+      - web
+  - id: experience
+    label: Program & experience
+    focus: program architecture, attendee journey, accessibility, inclusion, food, sustainability, and virtual or hybrid technology
+    mission: Design an inclusive end-to-end attendee experience that satisfies the event brief.
+    prompt: references/experience.md
+    tools:
+      - webSearch
+      - places
+      - events
+      - routes
+      - weather
+    minimumSources: 2
+    preferredSourceTypes:
+      - place
+      - event
+      - weather
+      - web
+    freshness:
+      maxAgeHours: 12
+  - id: operations
+    label: Venue & operations
+    focus: venue scorecard, capacity, layout, transport, AV, staffing, suppliers, dependencies, critical path, and run-of-show
+    mission: Prove the recommended event can operate safely and coherently from load-in through load-out.
+    prompt: references/operations.md
+    tools:
+      - webSearch
+      - places
+      - routes
+      - weather
+    minimumSources: 2
+    preferredSourceTypes:
+      - place
+      - weather
+      - web
+    freshness:
+      maxAgeHours: 12
+  - id: budget-risk
+    label: Budget, contracts & risk
+    focus: bottom-up budget, fees, contingency, supplier and contract assumptions, risk register, owners, emergency communications, and Plan B triggers
+    mission: Bound total cost and turn material threats into owned mitigations and explicit fallback decisions.
+    prompt: references/budget-risk.md
+    tools:
+      - webSearch
+      - places
+      - routes
+      - weather
+    minimumSources: 2
+    preferredSourceTypes:
+      - place
+      - weather
+      - web
+    freshness:
+      maxAgeHours: 12

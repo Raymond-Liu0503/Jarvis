@@ -1,7 +1,18 @@
 ---
 name: travel-planning
-description: Research destinations, itineraries, transport, weather, events, costs, schedules, and trip feasibility for specific travelers and dates.
+description: Plans traveler-specific trips when dates, routing, destinations, costs, or feasibility must be researched; finding events to attend belongs here, while producing an event uses event-planning.
 ---
-Frame trip feasibility around dates, origin, destination, nationality-dependent rules, traveler constraints, and pace. Ask only when missing details would materially change feasibility or safety; otherwise state assumptions. Match sources to claims, separate evidence from inference, and stop when consequential logistics, cost, and risk claims are covered. Treat schedules, offers, weather, prices, and availability as expiring snapshots. Never book or prepare a transaction.
 
-Use [quick](references/quick.md) for bounded answers. Deep Research loads only the selected [logistics](references/logistics.md), [destination](references/destination.md), or [budget](references/budget.md) lens, then [synthesis](references/synthesis.md).
+# Travel Planning
+
+## Outcome
+Produce a feasible itinerary with priced options, alternatives, disruption triggers, and dated reconfirmation tasks.
+
+## Workflow
+Build the traveler brief; choose anchors; validate the critical path; compare budget, baseline, and premium options when evidence permits; add alternatives, buffers, and rechecks.
+
+## Decision rules
+Capture purpose, pace, interests, budget, flexibility, experience, accessibility, health constraints, and risk tolerance. Validate local dates, time zones, the transport/check-in sequence, hours, ticket windows, rest, and buffers. Compare common-scope total costs, restrictions, availability, and expiry. Set dated rechecks for documents, reservations, schedules, weather, advisories, insurance, and accessibility. Never imply booking.
+
+## Modes
+Use [Quick](references/quick.md) for a bounded question. Deep Research loads the relevant [Logistics](references/logistics.md), [Destination](references/destination.md), or [Budget](references/budget.md) lens, then [Synthesis](references/synthesis.md).

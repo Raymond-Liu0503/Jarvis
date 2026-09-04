@@ -1,21 +1,88 @@
-version: 1.2.0
+version: 1.3.0
 label: Travel Planning
-disclaimer: Prices and availability require verification with the provider.
-tools: [weather, places, events, routes, travelRequirements, flightOffers, webSearch]
+disclaimer: Prices, schedules, entry decisions, and availability require dated provider verification.
+tools:
+  - weather
+  - places
+  - events
+  - routes
+  - travelRequirements
+  - flightOffers
+  - webSearch
 intake:
-  - { id: destination, description: destination or region, question: Where would you like to go? }
-  - { id: dates, description: travel dates or date range, question: What dates should I plan around? }
+  - id: destination
+    description: destination or region
+    question: Where would you like to go?
+  - id: dates
+    description: travel dates or date range
+    question: What dates should I plan around?
   - id: origin
     description: departure city or region
     question: Where will the trip start?
-    requiredWhen: Origin changes routing cost timing entry or feasibility.
+    requiredWhen: Origin changes routing, cost, timing, entry, or feasibility.
   - id: traveller-constraints
-    description: nationality documents traveler count age accessibility health and dietary constraints
+    description: nationality, documents, traveler count, age, accessibility, health, and dietary constraints
     question: Which traveler details or constraints should the plan account for?
-    requiredWhen: Traveler-specific details change entry safety accessibility cost or feasibility.
-prompts: { quick: references/quick.md, synthesis: references/synthesis.md }
-limits: { deepToolRounds: 3 }
+    requiredWhen: Traveler-specific details change entry, safety, accessibility, cost, or feasibility.
+  - id: trip-preferences
+    description: purpose, pace, interests, accommodation style, budget, flexibility, prior experience, and risk tolerance
+    question: What purpose, pace, interests, accommodation style, budget, and flexibility should shape the trip?
+    requiredWhen: Missing preferences would materially change the itinerary or option tier.
+prompts:
+  quick: references/quick.md
+  synthesis: references/synthesis.md
+limits:
+  deepToolRounds: 3
 lenses:
-  - { id: logistics, label: Logistics & schedule, focus: routes timing and itinerary, mission: Test whether the trip works operationally on the specified dates, prompt: references/logistics.md, tools: [weather, routes, travelRequirements, flightOffers, webSearch], minimumSources: 2, preferredSourceTypes: [weather, web], freshness: { maxAgeHours: 6 } }
-  - { id: destination, label: Destinations & events, focus: places weather and local events, mission: Find date-relevant places and events that fit the traveler, prompt: references/destination.md, tools: [places, events, weather, webSearch], minimumSources: 2, preferredSourceTypes: [place, event, weather, web], freshness: { maxAgeHours: 6 } }
-  - { id: budget, label: Budget & feasibility, focus: cost constraints and alternatives, mission: Assess affordability and practical alternatives, prompt: references/budget.md, tools: [flightOffers, routes, places, webSearch], minimumSources: 2, preferredSourceTypes: [place, commerce, web], freshness: { maxAgeHours: 12 } }
+  - id: logistics
+    label: Logistics & schedule
+    focus: local dates, time zones, arrivals, check-in, terminals, transfers, ticket windows, rest, buffers, documents, and advisories
+    mission: Validate the trip's complete critical path and identify disruption triggers and dated rechecks.
+    prompt: references/logistics.md
+    tools:
+      - weather
+      - routes
+      - travelRequirements
+      - flightOffers
+      - webSearch
+    minimumSources: 2
+    preferredSourceTypes:
+      - weather
+      - web
+    freshness:
+      maxAgeHours: 6
+  - id: destination
+    label: Destinations & events
+    focus: itinerary anchors, date-specific places and events, pace, accessibility, opening hours, reservations, and weather resilience
+    mission: Select traveler-fit anchors whose dates, access, and operating constraints are verified.
+    prompt: references/destination.md
+    tools:
+      - places
+      - events
+      - weather
+      - webSearch
+    minimumSources: 2
+    preferredSourceTypes:
+      - place
+      - event
+      - weather
+      - web
+    freshness:
+      maxAgeHours: 6
+  - id: budget
+    label: Budget & feasibility
+    focus: common option assumptions, total-trip cost, inclusions, exclusions, restrictions, availability, expiry, and practical alternatives
+    mission: Compare supported budget, baseline, and premium trip options on a common total-cost basis.
+    prompt: references/budget.md
+    tools:
+      - flightOffers
+      - routes
+      - places
+      - webSearch
+    minimumSources: 2
+    preferredSourceTypes:
+      - place
+      - commerce
+      - web
+    freshness:
+      maxAgeHours: 12

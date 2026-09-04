@@ -1,16 +1,58 @@
-version: 1.2.0
+version: 1.3.0
 label: Product Research
-disclaimer: Observed prices are snapshots; verify price and availability with the seller.
-tools: [commerceSnapshot, webSearch]
+disclaimer: Observed prices and availability are snapshots; verify the exact variant and seller terms.
+tools:
+  - commerceSnapshot
+  - webSearch
 intake:
-  - { id: product, description: product description or public URL, question: What product or public product URL should I research? }
+  - id: product
+    description: product category, exact candidate, or public product URL
+    question: What product, candidate set, or public product URL should I research?
   - id: requirements
-    description: intended use must-haves preferences budget compatibility and region
-    question: Which requirements or constraints would materially affect the choice?
-    requiredWhen: Missing requirements would change product fit or the recommendation.
-prompts: { quick: references/quick.md, synthesis: references/synthesis.md }
-limits: { deepToolRounds: 3 }
+    description: hard gates, preferences, ownership horizon, compatibility, budget, and region
+    question: Which hard requirements, preferences, ownership horizon, compatibility, budget, and region should govern the choice?
+    requiredWhen: Missing requirements would change product fit, exact regional variant, lifecycle cost, or the recommendation.
+prompts:
+  quick: references/quick.md
+  synthesis: references/synthesis.md
+limits:
+  deepToolRounds: 3
 lenses:
-  - { id: fit, label: Specifications & fit, focus: exact variants requirements specifications compatibility and regional differences, mission: Determine whether exact candidates satisfy the user's requirements, prompt: references/fit.md, tools: [commerceSnapshot, webSearch], minimumSources: 2, preferredSourceTypes: [commerce, web] }
-  - { id: price, label: Price & alternatives, focus: observed price and competing products, mission: Compare current value and credible substitutes, prompt: references/price.md, tools: [commerceSnapshot, webSearch], minimumSources: 2, preferredSourceTypes: [commerce, web], freshness: { maxAgeHours: 6 } }
-  - { id: reliability, label: Reviews & reliability, focus: independent tests owner reports support lifecycle and review manipulation, mission: Identify repeated strengths failure modes and evidence bias, prompt: references/reliability.md, tools: [webSearch], minimumSources: 2, preferredSourceTypes: [web], freshness: { publishedWithinDays: 1095 } }
+  - id: fit
+    label: Requirements & fit
+    focus: hard gates, stated preferences, exact regional variants, compatibility, declarations, and relevant measured performance
+    mission: Determine which exact candidates pass every hard requirement and how the survivors fit stated priorities.
+    prompt: references/fit.md
+    tools:
+      - commerceSnapshot
+      - webSearch
+    minimumSources: 2
+    preferredSourceTypes:
+      - commerce
+      - web
+  - id: price
+    label: Price & lifecycle value
+    focus: seller authenticity, current price, returns, warranty exclusions, subscriptions, consumables, energy, repairability, and ownership horizon
+    mission: Compare current and whole-life value under a common ownership scenario, including credible substitutes.
+    prompt: references/price.md
+    tools:
+      - commerceSnapshot
+      - webSearch
+    minimumSources: 2
+    preferredSourceTypes:
+      - commerce
+      - web
+    freshness:
+      maxAgeHours: 6
+  - id: reliability
+    label: Testing, safety & reliability
+    focus: test-method relevance, repeatability, owner patterns, recalls, safety, privacy, update support, repair evidence, and source bias
+    mission: Establish credible performance and failure patterns while exposing weak, mixed, or manipulated evidence.
+    prompt: references/reliability.md
+    tools:
+      - webSearch
+    minimumSources: 2
+    preferredSourceTypes:
+      - web
+    freshness:
+      publishedWithinDays: 1095

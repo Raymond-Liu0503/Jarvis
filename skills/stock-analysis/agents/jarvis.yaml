@@ -1,14 +1,74 @@
-version: 1.2.0
+version: 1.3.0
 label: Stock Analysis
 disclaimer: Informational research only — not personalized financial advice.
-tools: [financialDatasets, marketData, marketOverview, webSearch]
+tools:
+  - financialDatasets
+  - marketData
+  - marketOverview
+  - webSearch
 intake:
   - id: company
-    description: ticker symbol or public company
-    question: Which ticker or public company should I research?
-prompts: { quick: references/quick.md, synthesis: references/synthesis.md }
-limits: { deepToolRounds: 3 }
+    description: exact ticker, issuer, share class, or listed security
+    question: Which ticker, issuer, share class, or listed security should I research?
+  - id: analysis-brief
+    description: analytical question, comparison set, as-of date, and investment horizon
+    question: What question, comparison, as-of date, and horizon should the analysis address?
+    requiredWhen: Missing scope would materially change the forecast, valuation, comparison, or conclusion.
+prompts:
+  quick: references/quick.md
+  synthesis: references/synthesis.md
+limits:
+  deepToolRounds: 3
 lenses:
-  - { id: fundamentals, label: Fundamentals & filings, focus: filings segments cash flow dilution obligations and accounting changes, mission: Establish what the business earns owns owes and has disclosed, prompt: references/fundamentals.md, tools: [financialDatasets, marketData, webSearch], minimumSources: 2, preferredSourceTypes: [filing, market, web], freshness: { category: financial report, publishedWithinDays: 550 } }
-  - { id: market, label: Market & news, focus: price context catalysts and current news, mission: Explain price context and time-sensitive catalysts without overstating causality, prompt: references/market.md, tools: [marketData, marketOverview, webSearch], minimumSources: 2, preferredSourceTypes: [market, news, web], freshness: { category: news, publishedWithinDays: 30, maxAgeHours: 1 } }
-  - { id: risk, label: Risk & comparables, focus: filing risks valuation assumptions peers catalysts and downside cases, mission: Challenge the thesis with comparables valuation context and downside cases, prompt: references/risk.md, tools: [financialDatasets, marketData, webSearch], minimumSources: 2, preferredSourceTypes: [filing, market, news, web], freshness: { publishedWithinDays: 365 } }
+  - id: fundamentals
+    label: Fundamentals & filings
+    focus: exact security, business and industry map, normalized history, KPI drivers, earnings quality, forecast, capital structure, and dilution
+    mission: Build a comparable operating history and driver-based forecast grounded in issuer disclosures.
+    prompt: references/fundamentals.md
+    tools:
+      - financialDatasets
+      - marketData
+      - webSearch
+    minimumSources: 2
+    preferredSourceTypes:
+      - filing
+      - market
+      - web
+    freshness:
+      category: financial report
+      publishedWithinDays: 550
+  - id: market
+    label: Market & news
+    focus: benchmark-relative price context, market expectations, current catalysts, event timing, and monitoring indicators
+    mission: Establish what expectations appear priced in and which dated catalysts could change them.
+    prompt: references/market.md
+    tools:
+      - marketData
+      - marketOverview
+      - webSearch
+    minimumSources: 2
+    preferredSourceTypes:
+      - market
+      - news
+      - web
+    freshness:
+      category: news
+      publishedWithinDays: 30
+      maxAgeHours: 1
+  - id: risk
+    label: Valuation, risk & comparables
+    focus: defensible peers, valuation cases and sensitivities, expectations gap, downside paths, catalysts, and thesis invalidation
+    mission: Value the security across supported cases and identify evidence that would overturn the thesis.
+    prompt: references/risk.md
+    tools:
+      - financialDatasets
+      - marketData
+      - webSearch
+    minimumSources: 2
+    preferredSourceTypes:
+      - filing
+      - market
+      - news
+      - web
+    freshness:
+      publishedWithinDays: 365

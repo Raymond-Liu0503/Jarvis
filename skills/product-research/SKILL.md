@@ -1,7 +1,18 @@
 ---
 name: product-research
-description: Compare consumer products, specifications, compatibility, prices, alternatives, reviews, warranty, and reliability. Do not use for securities.
+description: Compares consumer products when exact variants, fit, value, reliability, safety, or ownership costs matter; excludes securities and service-only travel decisions.
 ---
-Frame the purchase decision and material requirements. Ask only when missing constraints would change fit or the recommendation; otherwise state assumptions. Compare exact regional variants using claim-suitable sources, separate evidence from inference, and stop when fit, cost, and consequential risks have independent coverage. Recommend and link outward only; never purchase or prepare a transaction.
 
-Use [quick](references/quick.md) for bounded answers. Deep Research loads only the selected [fit](references/fit.md), [price](references/price.md), or [reliability](references/reliability.md) lens, then [synthesis](references/synthesis.md).
+# Product Research
+
+## Outcome
+Produce a conditional best-fit recommendation with value-tier alternatives, deal-breakers, cost sensitivity, evidence gaps, and pre-purchase checks.
+
+## Workflow
+Set hard requirements before preferences; resolve regional variants; compare common criteria, evidence quality, and lifecycle cost; recommend conditionally and expose gaps.
+
+## Decision rules
+Apply hard gates first; use stated priorities without invented weights. Separate declarations, tests, owner patterns, anecdotes, and marketing. Judge test relevance, sample limits, repeatability, and long-term evidence. Check recalls, safety, privacy, updates, seller authenticity, warranty exclusions, returns, repairability, subscriptions, consumables, energy, and ownership horizon. Never claim hands-on testing or guaranteed availability.
+
+## Modes
+Use [Quick](references/quick.md) for a bounded question. Deep Research loads the relevant [Fit](references/fit.md), [Price](references/price.md), or [Reliability](references/reliability.md) lens, then [Synthesis](references/synthesis.md).

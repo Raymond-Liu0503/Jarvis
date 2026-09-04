@@ -13,13 +13,41 @@ import { fallbackSpecialistResult, searchOptionsFor, specialistSourceTarget, str
 import { recoverObjectFromText } from "@/lib/research/structured-output";
 import { specialistResultSchema } from "@/lib/contracts";
 import { quickEvidenceFallback, quickToolErrorMessage } from "@/lib/research/quick-fallback";
+import skillEvaluations from "@/tests/fixtures/skill-evaluations.json";
 describe("skill packages", () => {
-  it("auto-discovers three domains and the fallback", () => expect([...loadSkills().keys()].sort()).toEqual(["general-research", "product-research", "stock-analysis", "travel-planning"]));
+  it("auto-discovers four domains and the fallback", () => expect([...loadSkills().keys()].sort()).toEqual(["event-planning", "general-research", "product-research", "stock-analysis", "travel-planning"]));
   it("keeps routing metadata cheap", () => expect(skillCatalog().every(item => Object.keys(item).length === 2)).toBe(true));
   it("loads versioned references and namespaced lenses", () => { for (const skill of loadSkills().values()) { expect(skill.instructions.length).toBeGreaterThan(80); expect(skill.specialists.length).toBeGreaterThanOrEqual(3); for (const lens of skill.specialists) { expect(lens.id.startsWith(`${skill.id}/`)).toBe(true); expect(lens.systemPrompt.length).toBeGreaterThan(60); expect(lens.tools.every(tool => skill.tools.includes(tool))).toBe(true); } } });
-  it("upgrades every skill package and keeps specialist retrieval at four sources", () => { for (const skill of loadSkills().values()) { expect(skill.version).toBe("1.2.0"); for (const lens of skill.specialists) expect(specialistSourceTarget(lens)).toBe(4); } });
+  it("loads the intended versions and keeps specialist retrieval at four sources", () => {
+    expect(Object.fromEntries([...loadSkills()].map(([id, skill]) => [id, skill.version]))).toEqual({
+      "event-planning": "1.0.0",
+      "general-research": "1.2.0",
+      "product-research": "1.3.0",
+      "stock-analysis": "1.3.0",
+      "travel-planning": "1.3.0",
+    });
+    for (const skill of loadSkills().values()) for (const lens of skill.specialists) expect(specialistSourceTarget(lens)).toBe(4);
+  });
+  it("keeps upgraded synthesis prompts within the runtime budget and includes the audit loop", () => {
+    for (const id of ["stock-analysis", "travel-planning", "product-research", "event-planning"]) {
+      const skill = getSkill(id);
+      expect(`${skill.instructions}\n${skill.synthesisPrompt}`.length).toBeLessThanOrEqual(2_000);
+      expect(skill.instructions).toMatch(/## Outcome[\s\S]*## Workflow[\s\S]*## Decision rules[\s\S]*## Modes/);
+      expect(skill.quickPrompt).toMatch(/## Use[\s\S]*## Process[\s\S]*## Deliver/);
+      for (const lens of skill.specialists) expect(lens.systemPrompt).toMatch(/## Objective[\s\S]*## Workflow[\s\S]*## Evidence[\s\S]*## Return/);
+      expect(skill.synthesisPrompt).toMatch(/## Assemble[\s\S]*## Audit[\s\S]*## Deliver/);
+      expect(skill.synthesisPrompt).toMatch(/Revise once when a material defect is found/i);
+    }
+  });
   it("enables bounded structured travel research without enabling booking", () => { const skill = getSkill("travel-planning"); expect(skill.tools).toEqual(expect.arrayContaining(["routes", "travelRequirements"])); expect(skill.tools).not.toContain("commerceSnapshot"); expect(skill.specialists.find(item => item.id.endsWith("/logistics"))?.maxToolRounds).toBe(3); });
+  it("gives event planning only its five read-only research tools", () => expect(getSkill("event-planning").tools).toEqual(["webSearch", "places", "events", "routes", "weather"]));
   it("falls back and composes obvious domains", () => { expect(heuristicRoute("Explain photosynthesis").selections[0].skillId).toBe("general-research"); expect(heuristicRoute("Compare travel headphones for my trip").selections.map(item => item.skillId)).toEqual(["travel-planning", "product-research"]); });
+  it("distinguishes producing events from finding events and composes destination events", () => {
+    expect(heuristicRoute("Plan a 200-person conference in Toronto").selections.map(item => item.skillId)).toEqual(["event-planning"]);
+    expect(heuristicRoute("Organize a birthday party").selections.map(item => item.skillId)).toEqual(["event-planning"]);
+    expect(heuristicRoute("Find festivals during my Lisbon trip").selections.map(item => item.skillId)).toEqual(["travel-planning"]);
+    expect(heuristicRoute("Plan a destination wedding in Lisbon").selections.map(item => item.skillId)).toEqual(["event-planning", "travel-planning"]);
+  });
   it("does not route stock purchase language to product research", () => expect(heuristicRoute("Should I buy MRVL stock at this price?").selections.map(item => item.skillId)).toEqual(["stock-analysis"]));
   it("recognizes a named company as satisfying stock intake", () => {
     expect(hasExplicitIntakeValue("stock-analysis", "company", "Should I buy Marvell stock now?")).toBe(true);
@@ -27,8 +55,26 @@ describe("skill packages", () => {
     expect(hasExplicitIntakeValue("stock-analysis", "company", "Should I buy this stock?")).toBe(false);
   });
   it("creates a bounded balanced plan without models", async () => { const result = await planResearch(["stock-analysis", "travel-planning"], "AAPL around my Lisbon trip", []); expect(result.plan?.specialists.length).toBeGreaterThanOrEqual(3); expect(result.plan?.specialists.length).toBeLessThanOrEqual(4); expect(new Set(result.plan?.specialists.map(item => item.skillId))).toEqual(new Set(["stock-analysis", "travel-planning"])); });
+  it("requires destination and dates before a ticket or concert lookup", async () => {
+    const missingBoth = await planResearch(["travel-planning"], "When and where is the next BTS concert? And how much?", []);
+    expect(missingBoth.questions).toEqual(["Where would you like to go?", "What dates should I plan around?"]);
+    const missingDate = await planResearch(["travel-planning"], "Find BTS concerts in Toronto", []);
+    expect(missingDate.questions).toEqual(["What dates should I plan around?"]);
+    const scoped = await planResearch(["travel-planning"], "Find BTS concerts in Toronto next month", []);
+    expect(scoped.plan?.skillIds).toEqual(["travel-planning"]);
+    expect(hasExplicitIntakeValue("travel-planning", "dates", "When and where is the next BTS concert?")).toBe(false);
+  });
   it("uses five clarification rounds as guidance rather than a hard limit", () => { expect(CLARIFICATION_SOFT_LIMIT).toBe(5); expect(clarificationPlanningGuidance(4)).toBe(""); expect(clarificationPlanningGuidance(5)).toMatch(/soft threshold, not a hard limit/i); expect(clarificationPlanningGuidance(12)).toMatch(/12 clarification rounds/); });
   it("loads the required fallback", () => expect(getSkill("general-research").tools).toEqual(["webSearch"]));
+  it("defines representative, ambiguous, and adversarial evaluations for every upgraded skill and model role", () => {
+    expect(skillEvaluations.modelRoles).toEqual(["FAST", "REASONING", "SYNTHESIS"]);
+    for (const skill of ["stock-analysis", "travel-planning", "product-research", "event-planning"]) {
+      const scenarios = skillEvaluations.scenarios.filter(item => item.skill === skill);
+      expect(scenarios.map(item => item.kind).sort()).toEqual(["adversarial", "ambiguous", "representative"]);
+      expect(scenarios.every(item => item.expectedSkillIds.length && item.acceptableLensIds.length && item.requiredBehaviors.length && item.forbiddenBehaviors.length)).toBe(true);
+    }
+    expect(skillEvaluations.rubric.criteria).toHaveLength(8);
+  });
   it("classifies deterministic failures as terminal and transient failures as retryable", () => { expect(classifyFailure(new Error("Invalid job payload")).retryable).toBe(false); expect(classifyFailure(new Error("provider connection reset")).retryable).toBe(true); });
   it("keeps exponential retry jitter within 25 percent", () => { expect(retryDelayMs(3, () => 0)).toBe(4_000); expect(retryDelayMs(3, () => 1)).toBe(5_000); expect(retryDelayMs(20, () => 1)).toBe(75_000); });
   it("redacts and caps stored errors", () => { const clean = sanitizeError(new Error(`api_key=secret-value ${"x".repeat(3_000)}`)); expect(clean.message).not.toContain("secret-value"); expect(clean.message.length).toBeLessThanOrEqual(2_048); });
@@ -50,13 +96,24 @@ describe("table-driven skill behavior", () => {
     { name: "general comparisons do not masquerade as product shopping", check: () => expect(heuristicRoute("Compare the leading theories of memory").selections.map(item => item.skillId)).toEqual(["general-research"]) },
     { name: "product routes exact consumer comparisons and exposes all lenses", check: () => { expect(heuristicRoute("Compare Sony and Bose headphones").selections.map(item => item.skillId)).toEqual(["product-research"]); expect(getSkill("product-research").specialists.map(item => item.id.split("/")[1])).toEqual(["fit", "price", "reliability"]); } },
     { name: "product requirements are conditionally required and detectable", check: () => { const field = getSkill("product-research").intake.find(item => item.id === "requirements"); expect(field?.requiredWhen).toMatch(/change product fit/i); expect(hasExplicitIntakeValue("product-research", "requirements", "I need headphones under $300 for flights")).toBe(true); expect(hasExplicitIntakeValue("product-research", "requirements", "Recommend headphones")).toBe(false); } },
+    { name: "product requirements detect ownership horizon and region", check: () => { expect(hasExplicitIntakeValue("product-research", "requirements", "I will keep it for five years in Canada")).toBe(true); expect(getSkill("product-research").intake.find(item => item.id === "requirements")?.description).toMatch(/ownership horizon.*region/i); } },
     { name: "product and travel compose for trip gear", check: () => expect(heuristicRoute("Compare travel headphones for my trip").selections.map(item => item.skillId)).toEqual(["travel-planning", "product-research"]) },
     { name: "stock routes purchase language only to securities analysis", check: () => { expect(heuristicRoute("Should I buy MRVL stock at this price?").selections.map(item => item.skillId)).toEqual(["stock-analysis"]); expect(getSkill("stock-analysis").specialists.map(item => item.id.split("/")[1])).toEqual(["fundamentals", "market", "risk"]); } },
     { name: "stock accepts exact securities and rejects ambiguous references", check: () => { expect(hasExplicitIntakeValue("stock-analysis", "company", "Analyze $MRVL")).toBe(true); expect(hasExplicitIntakeValue("stock-analysis", "company", "Analyze this stock")).toBe(false); } },
+    { name: "stock detects a scoped analysis brief", check: () => { expect(hasExplicitIntakeValue("stock-analysis", "analysis-brief", "Compare AAPL with MSFT over five years as of today")).toBe(true); expect(hasExplicitIntakeValue("stock-analysis", "analysis-brief", "Analyze AAPL")).toBe(false); } },
     { name: "stock and travel compose without product leakage", check: () => expect(heuristicRoute("Analyze AAPL stock before my Lisbon trip").selections.map(item => item.skillId)).toEqual(["stock-analysis", "travel-planning"]) },
     { name: "travel routes dated itinerary requests", check: () => expect(heuristicRoute("Plan a trip to Lisbon next April").selections.map(item => item.skillId)).toEqual(["travel-planning"]) },
     { name: "travel origin and traveler constraints are conditional", check: () => { const skill = getSkill("travel-planning"); expect(skill.intake.find(item => item.id === "origin")?.requiredWhen).toMatch(/routing/i); expect(skill.intake.find(item => item.id === "traveller-constraints")?.requiredWhen).toMatch(/entry/i); expect(hasExplicitIntakeValue("travel-planning", "origin", "Fly from Toronto to Lisbon")).toBe(true); expect(hasExplicitIntakeValue("travel-planning", "traveller-constraints", "Two Canadian passport holders, one wheelchair user")).toBe(true); } },
     { name: "travel exposes logistics destination and budget lenses", check: () => expect(getSkill("travel-planning").specialists.map(item => item.id.split("/")[1])).toEqual(["logistics", "destination", "budget"]) },
+    { name: "travel detects the expanded traveler brief", check: () => { expect(hasExplicitIntakeValue("travel-planning", "trip-preferences", "A relaxed food trip with boutique hotels under CAD 5,000 and flexible dates")).toBe(true); expect(hasExplicitIntakeValue("travel-planning", "trip-preferences", "Plan a trip")).toBe(false); } },
+    { name: "event exposes four professional lenses and conditional intake", check: () => {
+      const skill = getSkill("event-planning");
+      expect(skill.specialists.map(item => item.id.split("/")[1])).toEqual(["strategy", "experience", "operations", "budget-risk"]);
+      expect(skill.intake.map(item => item.id)).toEqual(["event-brief", "location-dates", "constraints"]);
+      expect(hasExplicitIntakeValue("event-planning", "event-brief", "Plan a hybrid conference for 200 attendees")).toBe(true);
+      expect(hasExplicitIntakeValue("event-planning", "location-dates", "Host it in Toronto next October")).toBe(true);
+      expect(hasExplicitIntakeValue("event-planning", "constraints", "The venue must be accessible and stay under $150,000")).toBe(true);
+    } },
   ];
 
   it.each(cases)("$name", ({ check }) => check());
